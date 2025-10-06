@@ -78,6 +78,7 @@ import {
     DeleteSweep,
     SelectAll,
     DeselectOutlined,
+    Menu as MenuIcon
 } from "@mui/icons-material";
 import {
     adminCrmLeadsApi,
@@ -1035,6 +1036,25 @@ const LeadsPage = () => {
         "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
     ]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [isMobileMenu, setisMobileMenu] = useState(false);
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth < 768) {
+                setIsSidebarCollapsed(false); // collapse on mobile
+            } else {
+                setIsSidebarCollapsed(true); // expand on desktop
+            }
+        };
+
+        // Run once on mount
+        handleResize();
+
+        // Add event listener for screen resize
+        window.addEventListener("resize", handleResize);
+
+        // Cleanup listener
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
     const [anchorEl, setAnchorEl] = useState(null);
     const [selectedLead, setSelectedLead] = useState(null);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -1058,7 +1078,7 @@ const LeadsPage = () => {
             }
 
             const currentUser = authUser().user;
-            console.log('updatedCurrentUser.role: ', currentUser._id,allUsers);
+            console.log('updatedCurrentUser.role: ', currentUser._id, allUsers);
 
             // Filter current user from latest data to get updated permissions
             const updatedCurrentUser = allUsers.allUsers.find(user => user._id === currentUser._id);
@@ -1093,7 +1113,7 @@ const LeadsPage = () => {
                     user.role.includes("superadmin") ||
                     user.role.includes("subadmin")
                 );
- 
+
             }
             else {
                 agents = []
@@ -1378,10 +1398,23 @@ const LeadsPage = () => {
     return (
         <Box sx={{ display: "block", height: "100vh", bgcolor: "grey.50" }}>
             {/* Sidebar */}
-            <Sidebar
-                isCollapsed={isSidebarCollapsed}
-                setIsSidebarCollapsed={setIsSidebarCollapsed}
-            />
+
+            <Box
+                sx={{
+                    // display: {
+                    //     xs: "none", // hide on mobile
+                    //     md: "block", // show on desktop
+                    // },
+
+                }}
+            >
+                <Sidebar
+                    setisMobileMenu={setisMobileMenu}
+                    isMobileMenu={isMobileMenu}
+                    isCollapsed={isSidebarCollapsed}
+                    setIsSidebarCollapsed={setIsSidebarCollapsed}
+                />
+            </Box>
 
             {/* Main Content */}
             <Box
@@ -1390,7 +1423,10 @@ const LeadsPage = () => {
                     flexGrow: 1,
                     display: "flex",
                     flexDirection: "column",
-                    ml: isSidebarCollapsed ? "80px" : "280px",
+                    ml: {
+                        xs: 0, // for mobile (0 - 600px) 
+                        md: isSidebarCollapsed ? "80px" : "280px", // from 900px+
+                    },
                     transition: "margin-left 0.3s ease",
                 }}
             >
@@ -1401,13 +1437,29 @@ const LeadsPage = () => {
                     sx={{ bgcolor: "background.paper", borderBottom: 1, borderColor: "divider" }}
                 >
                     <Toolbar sx={{ justifyContent: "space-between" }}>
-                        <Box>
-                            <Typography variant="h5" fontWeight="bold" color="text.primary">
-                                Leads Management
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Track and manage your sales pipeline
-                            </Typography>
+                        <Box 
+                            sx={{ display: "flex", alignItems: "center",gap:"10px" }}>
+                            <IconButton
+
+                                onClick={() => setisMobileMenu(!isMobileMenu)}
+                                size="small"
+                                sx={{
+                                    color: 'text.secondary', display: {
+                                        xs: 'block',
+                                        md: 'none'
+                                    }
+                                }}
+                            >
+                                <MenuIcon />
+                            </IconButton>
+                            <Box>
+                                <Typography variant="h5" fontWeight="bold" color="text.primary">
+                                    Leads Management
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    Track and manage your sales pipeline
+                                </Typography>
+                            </Box>
                         </Box>
                     </Toolbar>
                 </AppBar>
