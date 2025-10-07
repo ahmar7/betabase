@@ -36,22 +36,22 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
   ];
 
   const bottomMenuItems = [
-    { icon: <Logout />, label: 'Logout', onClick: () => handleLogout() },
+    { icon: <Logout />, label: 'Logout' },
   ];
 
-  const handleLogout = async () => {
-    try {
-      const logout = await logoutApi();
-      if (logout.success) {
-        signOut();
-        navigate("/auth/login/crm");
-      } else {
-        toast.error(logout.msg);
-      }
-    } catch (error) {
-      toast.error(error.message || "Logout failed");
-    }
-  };
+  // const handleLogout = async () => {
+  //   try {
+  //     const logout = await logoutApi();
+  //     if (logout.success) {
+  //       signOut();
+  //       navigate("/auth/login/crm");
+  //     } else {
+  //       toast.error(logout.msg);
+  //     }
+  //   } catch (error) {
+  //     toast.error(error.message || "Logout failed");
+  //   }
+  // };
 
   const drawerWidth = isCollapsed ? 80 : 280;
 
