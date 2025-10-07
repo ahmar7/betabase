@@ -6,6 +6,11 @@ const jwtToken = (user, statusCode, res) => {
   const secure = isProd || process.env.COOKIE_SECURE === 'true';
   const sameSite = secure ? 'None' : 'Lax';
 
+  // Clear any existing cookies with different domains first
+  res.clearCookie('jwttoken', { path: '/' });
+  res.clearCookie('jwttoken', { path: '/', domain: 'api.betabase.pro' });
+  res.clearCookie('jwttoken', { path: '/', domain: '.betabase.pro' });
+
   const options = {
     expires: new Date(
       Date.now() + process.env.TOKEN_EXPIRE * 24 * 60 * 60 * 1000
