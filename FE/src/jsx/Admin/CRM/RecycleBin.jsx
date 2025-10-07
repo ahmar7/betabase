@@ -243,7 +243,7 @@ const RecycleBin = () => {
         </Card>
       )}
 
-      <Card elevation={2}>
+      <Card elevation={2}sx={{ borderRadius: 3 }}>
         <TableContainer>
           {loading ? (
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300 }}>
