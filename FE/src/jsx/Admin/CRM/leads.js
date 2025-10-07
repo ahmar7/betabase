@@ -88,7 +88,8 @@ import {
     deleteLeadsBulkApi,
     deleteAllLeadsApi,
     updateLeadApi, exportLeadsApi,
-    allUsersApi
+    allUsersApi,
+    assignLeadsApi
 } from "../../../Api/Service";
 import { toast } from "react-toastify";
 import Sidebar from "./Sidebar.js";
@@ -112,7 +113,7 @@ const AVAILABLE_FIELDS = [
 const STATUS_OPTIONS = ["New", "Call Back", "Not Active", "Active", "Not Interested"];
 
 // Enhanced Create Lead Dialog Component
-const CreateLeadDialog = ({ open, onClose, onLeadCreated }) => {
+const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser }) => {
 
     const [activeStep, setActiveStep] = useState(0);
     const [tabValue, setTabValue] = useState(0);
@@ -134,6 +135,14 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated }) => {
     const [uploading, setUploading] = useState(false);
     const [creating, setCreating] = useState(false);
     const [mappingComplete, setMappingComplete] = useState(false);
+    const [selectedAgentId, setSelectedAgentId] = useState("");
+
+    useEffect(() => {
+        // Default assigned agent to the creator when dialog opens
+        if (open && currentUser?.user?._id) {
+            setSelectedAgentId(currentUser.user._id);
+        }
+    }, [open, currentUser]);
 
     const steps = ['Choose Method', 'Upload & Map Fields', 'Review & Submit'];
 
@@ -249,7 +258,11 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated }) => {
     const handleManualSubmit = async () => {
         try {
             setCreating(true);
-            const response = await createLeadApi(manualForm);
+            const payload = { ...manualForm };
+            if (currentUser?.user?.role === 'superadmin' && selectedAgentId) {
+                payload.agentId = selectedAgentId;
+            }
+            const response = await createLeadApi(payload);
             if (response.success) {
                 toast.success('Lead created successfully!');
                 onLeadCreated();
@@ -282,6 +295,9 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated }) => {
             formData.append('file', csvFile);
             formData.append('fieldMapping', JSON.stringify(fieldMapping));
             formData.append('selectedFields', JSON.stringify(selectedFields));
+            if (currentUser?.user?.role === 'superadmin' && selectedAgentId) {
+                formData.append('agentId', selectedAgentId);
+            }
 
             const response = await uploadLeadsCsvApi(formData);
             if (response.success) {
@@ -318,6 +334,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated }) => {
         setMappingComplete(false);
         setActiveStep(0);
         setTabValue(0);
+        setSelectedAgentId("");
 
         // Reset selected fields to defaults
         const initialSelectedFields = {};
@@ -699,6 +716,30 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated }) => {
                         </StepContent>
                     </Step>
                 </Stepper>
+                {currentUser?.user?.role === 'superadmin' && (
+                    <Box sx={{ mt: 2 }}>
+                        <Typography variant="subtitle2" gutterBottom>Assign to Agent</Typography>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Agent</InputLabel>
+                            <Select
+                                value={selectedAgentId}
+                                label="Agent"
+                                onChange={(e) => setSelectedAgentId(e.target.value)}
+                            >
+                                <MenuItem value="">
+                                    <em>Unassigned</em>
+                                </MenuItem>
+                                {agents
+                                    .filter(a => a.role === 'admin' || a.role === 'subadmin' || a.role === 'superadmin')
+                                    .map(agent => (
+                                        <MenuItem key={agent._id} value={agent._id}>
+                                            {agent.firstName} {agent.lastName} ({agent.role})
+                                        </MenuItem>
+                                    ))}
+                            </Select>
+                        </FormControl>
+                    </Box>
+                )}
             </DialogContent>
         </Dialog>
     );
@@ -1065,6 +1106,9 @@ const LeadsPage = () => {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteType, setDeleteType] = useState(''); // 'single', 'bulk', 'all'
     const [deleting, setDeleting] = useState(false);
+    const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+    const [assigning, setAssigning] = useState(false);
+    const [selectedAgentId, setSelectedAgentId] = useState("");
 
     // Toggle sidebar
     const currentAuthUser = authUser();
@@ -1468,13 +1512,23 @@ const LeadsPage = () => {
                 <Box sx={{ flex: 1, overflow: "auto", p: 3 }}>
                     {/* Bulk Actions Bar */}
                     {selectedLeads.size > 0 && (
-                        <Card elevation={2} sx={{ mb: 3, borderRadius: 3, bgcolor: 'primary.light' }}>
+                    <Card elevation={2} sx={{ mb: 3, borderRadius: 3, bgcolor: 'primary.light' }}>
                             <CardContent>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <Typography variant="body1" fontWeight="bold">
                                         {selectedLeads.size} lead(s) selected
                                     </Typography>
                                     <Box sx={{ display: 'flex', gap: 1 }}>
+                                    {authUser().user.role === 'superadmin' && (
+                                        <Button
+                                            variant="contained"
+                                            color="primary"
+                                            startIcon={<People />}
+                                            onClick={() => setAssignDialogOpen(true)}
+                                        >
+                                            Assign
+                                        </Button>
+                                    )}
                                         <Button
                                             variant="outlined"
                                             startIcon={<DeselectOutlined />}
@@ -1652,7 +1706,7 @@ const LeadsPage = () => {
                                                     Brand
                                                 </TableCell>
                                                 <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
-                                                    Address
+                                                    Agent
                                                 </TableCell>
                                                 <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
                                                     Status
@@ -1711,8 +1765,8 @@ const LeadsPage = () => {
                                                             </Typography>
                                                         </TableCell>
                                                         <TableCell>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                {lead.Address || '-'}
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {lead.agent ? `${lead.agent.firstName} ${lead.agent.lastName}` : 'Unassigned'}
                                                             </Typography>
                                                         </TableCell>
                                                         <TableCell>{getStatusChip(lead.status)}</TableCell>
@@ -1918,6 +1972,8 @@ const LeadsPage = () => {
                 open={createDialogOpen}
                 onClose={() => setCreateDialogOpen(false)}
                 onLeadCreated={handleLeadCreated}
+                agents={agents}
+                currentUser={currentAuthUser}
             />
 
             {/* View Details Dialog */}
@@ -1956,6 +2012,63 @@ const LeadsPage = () => {
                         disabled={deleting}
                     >
                         {deleting ? <CircularProgress size={24} /> : 'Delete'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Assign Leads Dialog */}
+            <Dialog open={assignDialogOpen} onClose={() => setAssignDialogOpen(false)}>
+                <DialogTitle>Assign Selected Leads</DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ mb: 2 }}>Select an agent to assign {selectedLeads.size} lead(s):</Typography>
+                    <FormControl fullWidth size="small">
+                        <InputLabel>Agent</InputLabel>
+                        <Select
+                            value={selectedAgentId}
+                            label="Agent"
+                            onChange={(e) => setSelectedAgentId(e.target.value)}
+                        >
+                            {agents
+                                .filter(a => a.role === 'admin' || a.role === 'subadmin')
+                                .map(agent => (
+                                    <MenuItem key={agent._id} value={agent._id}>
+                                        {agent.firstName} {agent.lastName} ({agent.role})
+                                    </MenuItem>
+                                ))}
+                        </Select>
+                    </FormControl>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setAssignDialogOpen(false)}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        onClick={async () => {
+                            try {
+                                if (!selectedAgentId) {
+                                    toast.error('Please select an agent');
+                                    return;
+                                }
+                                setAssigning(true);
+                                const res = await assignLeadsApi(Array.from(selectedLeads), selectedAgentId);
+                                if (res.success) {
+                                    toast.success(res.msg || 'Leads assigned successfully');
+                                    setAssignDialogOpen(false);
+                                    setSelectedAgentId("");
+                                    setSelectedLeads(new Set());
+                                    fetchLeads(pagination.currentPage);
+                                } else {
+                                    toast.error(res.msg || 'Failed to assign leads');
+                                }
+                            } catch (err) {
+                                console.error('Assign error:', err);
+                                toast.error('Error assigning leads');
+                            } finally {
+                                setAssigning(false);
+                            }
+                        }}
+                        disabled={assigning || selectedLeads.size === 0}
+                    >
+                        {assigning ? <CircularProgress size={24} /> : 'Assign'}
                     </Button>
                 </DialogActions>
             </Dialog>

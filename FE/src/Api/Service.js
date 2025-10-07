@@ -277,3 +277,6 @@ export const updateLeadApi = (leadId, leadData) => {
 export const exportLeadsApi = (filters = {}) => {
   return getBlobApi(`/exportLeads`,filters);
 };
+export const assignLeadsApi = (leadIds, agentId) => {
+  return postApi(`/crm/assignLeads`, { leadIds, agentId });
+};

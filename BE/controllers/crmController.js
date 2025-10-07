@@ -10,6 +10,12 @@ const ErrorHandler = require('../utils/errorHandler');
 
 const stream = require('stream');
 
+// Escape user input for safe use in regex
+function escapeRegex(text) {
+    return text && typeof text === 'string'
+        ? text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        : text;
+}
 
 exports.loginCRM = catchAsyncErrors(async (req, res, next) => {
     try {
@@ -45,6 +51,7 @@ exports.createLead = catchAsyncErrors(async (req, res, next) => {
             Brand,
             Address,
             status = 'New',
+            agentId,
         } = req.body;
 
         if (!firstName || !lastName || !email) {
@@ -65,17 +72,32 @@ exports.createLead = catchAsyncErrors(async (req, res, next) => {
             });
         }
 
+        // Decide agent assignment
+        let assignedAgent = null;
+        if (req.user && req.user.role === 'superadmin' && agentId) {
+            const agentUser = await User.findById(agentId);
+            if (!agentUser) return res.status(404).json({ success: false, msg: 'Agent user not found' });
+            if (!['admin', 'subadmin', 'superadmin'].includes(agentUser.role)) {
+                return res.status(400).json({ success: false, msg: 'Agent must be an admin, subadmin, or superadmin' });
+            }
+            assignedAgent = agentUser._id;
+        } else if (req.user && req.user.role !== 'superadmin') {
+            assignedAgent = req.user._id;
+        } else {
+            assignedAgent = null; // superadmin without agent selection leaves unassigned
+        }
+
         // Create new lead
         const newLead = new Lead({
             firstName,
             lastName,
             email,
             phone,
-            country,
+            country: country ? String(country).trim() : undefined,
             Brand,
             Address,
             status,
-            agent: req.user._id, // Assign to current user
+            agent: assignedAgent,
         });
 
         await newLead.save();
@@ -105,6 +127,24 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
 
         const fieldMapping = JSON.parse(req.body.fieldMapping || '{}');
         const selectedFields = JSON.parse(req.body.selectedFields || '{}');
+        const incomingAgentId = req.body.agentId;
+
+        // Resolve assignment agent once per upload
+        let uploadAssignedAgent = null;
+        if (req.user && req.user.role === 'superadmin' && incomingAgentId) {
+            const agentUser = await User.findById(incomingAgentId);
+            if (!agentUser) {
+                return res.status(404).json({ success: false, msg: 'Agent user not found' });
+            }
+            if (!['admin', 'subadmin', 'superadmin'].includes(agentUser.role)) {
+                return res.status(400).json({ success: false, msg: 'Agent must be an admin, subadmin, or superadmin' });
+            }
+            uploadAssignedAgent = agentUser._id;
+        } else if (req.user && ['admin', 'subadmin'].includes(req.user.role)) {
+            uploadAssignedAgent = req.user._id;
+        } else {
+            uploadAssignedAgent = null; // superadmin may leave unassigned
+        }
 
         const results = [];
         const errors = [];
@@ -150,7 +190,7 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
                             status: mappedData.status && ['New', 'Call Back', 'Not Active', 'Active', "Not Interested"].includes(mappedData.status)
                                 ? mappedData.status
                                 : 'New',
-                            agent: req.user._id,
+                            agent: uploadAssignedAgent,
                         };
 
                         results.push(cleanData);
@@ -265,7 +305,11 @@ exports.getLeads = async (req, res) => {
         }
 
         if (status && status !== '') query.status = status;
-        if (country && country !== '') query.country = country;
+        if (country && country !== '') {
+            // Case-insensitive, whitespace-tolerant country match
+            const countryPattern = new RegExp(`^${escapeRegex(String(country).trim())}$`, 'i');
+            query.country = countryPattern;
+        }
         if (agent && agent !== '') query.agent = agent;
 
         // Parse pagination parameters
@@ -285,18 +329,33 @@ exports.getLeads = async (req, res) => {
         const sort = {};
         sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-        // Execute queries in parallel for better performance
-        const [leads, totalLeads, totalFiltered] = await Promise.all([
-            // Get paginated leads WITHOUT population
-            Lead.find(query)
-                .sort(sort)
-                .skip(skip)
-                .limit(limitNum),
+        // Get leads without population first
+        const leads = await Lead.find(query)
+            .sort(sort)
+            .skip(skip)
+            .limit(limitNum)
+            .lean(); // Use lean() for better performance
 
-            // Get total count (for all leads)
+        // Manually populate agent data
+        const agentIds = leads.map(lead => lead.agent).filter(id => id);
+        const agents = await User.find({ _id: { $in: agentIds } })
+            .select('firstName lastName email')
+            .lean();
+
+        const agentMap = agents.reduce((map, agent) => {
+            map[agent._id.toString()] = agent;
+            return map;
+        }, {});
+
+        // Combine leads with agent data
+        const populatedLeads = leads.map(lead => ({
+            ...lead,
+            agent: lead.agent ? agentMap[lead.agent.toString()] : null
+        }));
+
+        // Get counts
+        const [totalLeads, totalFiltered] = await Promise.all([
             Lead.countDocuments({ isDeleted: false }),
-
-            // Get filtered count
             Lead.countDocuments(query)
         ]);
 
@@ -305,11 +364,10 @@ exports.getLeads = async (req, res) => {
         const hasNextPage = pageNum < totalPages;
         const hasPrevPage = pageNum > 1;
 
-
         res.status(200).json({
             success: true,
             data: {
-                leads,
+                leads: populatedLeads,
                 pagination: {
                     currentPage: pageNum,
                     totalPages,
@@ -330,6 +388,41 @@ exports.getLeads = async (req, res) => {
             message: "Server Error",
             error: err.message
         });
+    }
+};
+// Assign or reassign multiple leads to a specific agent (admin or subadmin)
+exports.assignLeadsToAgent = async (req, res) => {
+    try {
+        const Lead = await getLeadModel();
+        const { leadIds, agentId } = req.body;
+
+        if (!Array.isArray(leadIds) || leadIds.length === 0 || !agentId) {
+            return res.status(400).json({ success: false, msg: 'agentId and leadIds are required' });
+        }
+
+        // Validate target agent exists and has appropriate role
+        const agentUser = await User.findById(agentId);
+        if (!agentUser) {
+            return res.status(404).json({ success: false, msg: 'Agent user not found' });
+        }
+        if (!['admin', 'subadmin'].includes(agentUser.role)) {
+            return res.status(400).json({ success: false, msg: 'Agent must be an admin or subadmin' });
+        }
+
+        // Update leads in bulk
+        const result = await Lead.updateMany(
+            { _id: { $in: leadIds }, isDeleted: false },
+            { $set: { agent: agentId, updatedAt: new Date() } }
+        );
+
+        return res.status(200).json({
+            success: true,
+            msg: `${result.modifiedCount} lead(s) assigned to ${agentUser.firstName} ${agentUser.lastName}`,
+            data: { modifiedCount: result.modifiedCount }
+        });
+    } catch (err) {
+        console.error('Error assigning leads:', err);
+        return res.status(500).json({ success: false, message: 'Server Error', error: err.message });
     }
 };
 

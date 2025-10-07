@@ -3,7 +3,7 @@ let express = require("express");
 const { authorizedRoles, isAuthorizedUser, checkCrmAccess } = require("../middlewares/auth");
 
 const singleUpload = require("../middlewares/multer");
-const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead } = require("../controllers/crmController");
+const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent } = require("../controllers/crmController");
 const multer = require('multer');
 
 // Configure multer for file uploads
@@ -36,6 +36,9 @@ router.route('/crm/bulkDeleteLeads').post(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, bulkDeleteLeads);
 router.route('/crm/editLead/:id').patch(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, editLead);
+// superadmin-only bulk assign to agent
+router.route('/crm/assignLeads').post(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, assignLeadsToAgent);
 router.route('/exportLeads').get(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, exportLeads);
 // router.route('/crm/leads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), uploadCSV);
