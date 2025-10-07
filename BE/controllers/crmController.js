@@ -293,15 +293,29 @@ exports.getLeads = async (req, res) => {
         const query = { isDeleted: false };
 
         if (search) {
+            const searchTrimmed = String(search).trim();
+            const regexGlobal = { $regex: searchTrimmed, $options: "i" };
+            const nameRegex = new RegExp(escapeRegex(searchTrimmed), 'i');
+            const parts = searchTrimmed.split(/\s+/);
+
             query.$or = [
-                { firstName: { $regex: search, $options: "i" } },
-                { lastName: { $regex: search, $options: "i" } },
-                { email: { $regex: search, $options: "i" } },
-                { phone: { $regex: search, $options: "i" } },
-                { Brand: { $regex: search, $options: "i" } },
-                { Address: { $regex: search, $options: "i" } },
-                { email: { $regex: search, $options: "i" } }
+                { firstName: regexGlobal },
+                { lastName: regexGlobal },
+                { email: regexGlobal },
+                { phone: regexGlobal },
+                { Brand: regexGlobal },
+                { Address: regexGlobal },
+                // Full name contains search (e.g., "john doe")
+                { $expr: { $regexMatch: { input: { $concat: ['$firstName', ' ', '$lastName'] }, regex: nameRegex } } }
             ];
+
+            if (parts.length >= 2) {
+                const first = new RegExp(escapeRegex(parts[0]), 'i');
+                const last = new RegExp(escapeRegex(parts.slice(1).join(' ')), 'i');
+                // Match first and last separately in either order
+                query.$or.push({ $and: [{ firstName: first }, { lastName: last }] });
+                query.$or.push({ $and: [{ firstName: last }, { lastName: first }] });
+            }
         }
 
         if (status && status !== '') query.status = status;
@@ -311,6 +325,11 @@ exports.getLeads = async (req, res) => {
             query.country = countryPattern;
         }
         if (agent && agent !== '') query.agent = agent;
+
+        // Restrict non-superadmin to their own assigned leads only
+        if (req.user && req.user.role !== 'superadmin') {
+            query.agent = req.user._id;
+        }
 
         // Parse pagination parameters
         const pageNum = parseInt(page);
@@ -614,6 +633,11 @@ exports.exportLeads = async (req, res) => {
         if (status && status !== '') query.status = status;
         if (country && country !== '') query.country = country;
         if (agent && agent !== '') query.agent = agent;
+
+        // Restrict non-superadmin to exporting only their own assigned leads
+        if (req.user && req.user.role !== 'superadmin') {
+            query.agent = req.user._id;
+        }
 
         // Get all leads matching the filters (no pagination for export)
         const leads = await Lead.find(query).sort({ createdAt: -1 });

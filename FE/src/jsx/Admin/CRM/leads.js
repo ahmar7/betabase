@@ -146,6 +146,13 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
 
     const steps = ['Choose Method', 'Upload & Map Fields', 'Review & Submit'];
 
+    // Prevent CSV tab for subadmins
+    useEffect(() => {
+        if (currentUser?.user?.role === 'subadmin' && tabValue === 1) {
+            setTabValue(0);
+        }
+    }, [currentUser, tabValue]);
+
     // Initialize selected fields
     useEffect(() => {
         const initialSelectedFields = {};
@@ -382,7 +389,9 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
                         <StepContent>
                             <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 2 }}>
                                 <Tab label="Manual Entry" />
-                                <Tab label="CSV Upload" />
+                                {currentUser?.user?.role !== 'subadmin' && (
+                                    <Tab label="CSV Upload" />
+                                )}
                             </Tabs>
 
                             {tabValue === 0 && (
@@ -396,7 +405,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
                                 </Box>
                             )}
 
-                            {tabValue === 1 && (
+                            {tabValue === 1 && currentUser?.user?.role !== 'subadmin' && (
                                 <Box>
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                                         Upload a CSV file to create multiple leads at once
@@ -733,7 +742,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
                                     .filter(a => a.role === 'admin' || a.role === 'subadmin' || a.role === 'superadmin')
                                     .map(agent => (
                                         <MenuItem key={agent._id} value={agent._id}>
-                                            {agent.firstName} {agent.lastName} ({agent.role})
+                                            {agent.firstName} {agent.lastName} ({agent.role}){currentUser?.user?._id === agent._id ? ' (self)' : ''}
                                         </MenuItem>
                                     ))}
                             </Select>
@@ -2029,10 +2038,10 @@ const LeadsPage = () => {
                             onChange={(e) => setSelectedAgentId(e.target.value)}
                         >
                             {agents
-                                .filter(a => a.role === 'admin' || a.role === 'subadmin')
+                                .filter(a => a.role === 'admin' || a.role === 'subadmin' || a.role === 'superadmin')
                                 .map(agent => (
                                     <MenuItem key={agent._id} value={agent._id}>
-                                        {agent.firstName} {agent.lastName} ({agent.role})
+                                        {agent.firstName} {agent.lastName} ({agent.role}){currentAuthUser?.user?._id === agent._id ? ' (self)' : ''}
                                     </MenuItem>
                                 ))}
                         </Select>

@@ -23,7 +23,7 @@ const upload = multer({
 let router = express.Router();
 
 router.route('/crm/login').post(loginCRM);
-router.route('/crm/uploadLeads').post(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, upload.single('file'), uploadCSV);
+router.route('/crm/uploadLeads').post(isAuthorizedUser, authorizedRoles("superadmin", "admin"), checkCrmAccess, upload.single('file'), uploadCSV);
 // router.route('/crm/uploadLeads').post(uploadCSV);
 router.route('/crm/createLead').post(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, createLead);
 router.route('/crm/getLeads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getLeads);
