@@ -209,6 +209,7 @@ let userSchema = new mongoose.Schema({
     isEditSubManagementPermissions: { type: Boolean, default: false },
     isAddUsersToSubAdmin: { type: Boolean, default: false },
     accessCrm: { type: Boolean, default: false },
+    canManageCrmLeads: { type: Boolean, default: false },
     // add more when needed
   },
   resetPasswordToken: String,

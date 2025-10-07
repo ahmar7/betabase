@@ -742,7 +742,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
                                     .filter(a => a.role === 'admin' || a.role === 'subadmin' || a.role === 'superadmin')
                                     .map(agent => (
                                         <MenuItem key={agent._id} value={agent._id}>
-                                            {agent.firstName} {agent.lastName} ({agent.role}){currentUser?.user?._id === agent._id ? ' (self)' : ''}
+                                            {agent.firstName} {agent.lastName} ({agent.role}) - {agent.email}{currentUser?.user?._id === agent._id ? ' (self)' : ''}
                                         </MenuItem>
                                     ))}
                             </Select>
@@ -1133,6 +1133,7 @@ const LeadsPage = () => {
 
             // Filter current user from latest data to get updated permissions
             const updatedCurrentUser = allUsers.allUsers.find(user => user._id === currentUser._id);
+            setCurrentUserLatest(updatedCurrentUser);
 
             if (!updatedCurrentUser) {
                 toast.error("User not found");
@@ -1156,18 +1157,22 @@ const LeadsPage = () => {
 
             let agents = []; // Initialize agents array
 
-            // Set agents based on user role
+            // Set agents based on user role and permissions
             if (updatedCurrentUser.role === "superadmin") {
-                // For admin/superadmin: get all admin, superadmin, and subadmin users
                 agents = allUsers.allUsers.filter(user =>
                     user.role.includes("admin") ||
                     user.role.includes("superadmin") ||
                     user.role.includes("subadmin")
                 );
-
-            }
-            else {
-                agents = []
+            } else if (updatedCurrentUser.role === "admin") {
+                // Admin: can assign only if allowed, and targets restricted to subadmins
+                if (updatedCurrentUser.adminPermissions?.canManageCrmLeads) {
+                    agents = allUsers.allUsers.filter(user => user.role === "subadmin");
+                } else {
+                    agents = [];
+                }
+            } else {
+                agents = [];
             }
 
             setAgents(agents); // Set the agents state
@@ -1181,6 +1186,7 @@ const LeadsPage = () => {
         getAllUsers()
     }, []);
     const [agents, setAgents] = useState([]);
+    const [currentUserLatest, setCurrentUserLatest] = useState(null);
 
     // Fetch leads with filters and pagination
     const fetchLeads = async (page = 1, limit = pagination.limit) => {
@@ -1194,7 +1200,7 @@ const LeadsPage = () => {
 
             const res = await adminCrmLeadsApi({ params });
 
-            if (res.success) {
+            if (res.success) { 
                 setLeads(res.data.leads || []);
                 setPagination(res.data.pagination || {
                     currentPage: 1,
@@ -1526,7 +1532,7 @@ const LeadsPage = () => {
                                         {selectedLeads.size} lead(s) selected
                                     </Typography>
                                     <Box sx={{ display: 'flex', gap: 1 }}>
-                                    {authUser().user.role === 'superadmin' && (
+                                    {((authUser().user.role === 'superadmin') || (authUser().user.role === 'admin' && (currentUserLatest?.adminPermissions?.canManageCrmLeads))) && (
                                         <Button
                                             variant="contained"
                                             color="primary"
@@ -1659,7 +1665,7 @@ const LeadsPage = () => {
                                         </Select>
                                     </FormControl>
                                 </Grid>
-                                {authUser().user.role === 'superadmin' ? <Grid item xs={12} sm={6} md={3}>
+                                {(authUser().user.role === 'superadmin' || (authUser().user.role === 'admin' && currentUserLatest?.adminPermissions?.canManageCrmLeads)) ? <Grid item xs={12} sm={6} md={3}>
                                     <FormControl fullWidth size="small">
                                         <InputLabel>Agent</InputLabel>
                                         <Select
@@ -1670,7 +1676,7 @@ const LeadsPage = () => {
                                             <MenuItem value="">All Agents</MenuItem>
                                             {agents.map((agent) => (
                                                 <MenuItem key={agent._id} value={agent._id}>
-                                                    {agent.firstName}{" "}{agent.lastName}
+                                                    {agent.firstName} {agent.lastName} ({agent.role}) - {agent.email}
                                                 </MenuItem>
                                             ))}
                                         </Select>
@@ -1773,7 +1779,7 @@ const LeadsPage = () => {
                                                         </TableCell>
                                                         <TableCell>
                                                             <Typography variant="body2" fontWeight="medium">
-                                                                {lead.agent ? `${lead.agent.firstName} ${lead.agent.lastName}` : 'Unassigned'}
+                                                                {lead.agent ? `${lead.agent.firstName} ${lead.agent.lastName} (${lead.agent.role})` : 'Unassigned'}
                                                             </Typography>
                                                         </TableCell>
                                                         <TableCell>{getStatusChip(lead.status)}</TableCell>
@@ -2039,7 +2045,7 @@ const LeadsPage = () => {
                                 .filter(a => a.role === 'admin' || a.role === 'subadmin' || a.role === 'superadmin')
                                 .map(agent => (
                                     <MenuItem key={agent._id} value={agent._id}>
-                                        {agent.firstName} {agent.lastName} ({agent.role}){currentAuthUser?.user?._id === agent._id ? ' (self)' : ''}
+                                        {agent.firstName} {agent.lastName} ({agent.role}) - {agent.email}{currentAuthUser?.user?._id === agent._id ? ' (self)' : ''}
                                     </MenuItem>
                                 ))}
                         </Select>

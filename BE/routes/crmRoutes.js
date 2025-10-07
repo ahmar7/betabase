@@ -27,7 +27,7 @@ router.route('/crm/uploadLeads').post(isAuthorizedUser, authorizedRoles("superad
 // router.route('/crm/uploadLeads').post(uploadCSV);
 router.route('/crm/createLead').post(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, createLead);
 router.route('/crm/getLeads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getLeads);
-router.route('/crm/getLeads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getLeads);
+// router.route('/crm/getLeads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getLeads);
 router.route('/crm/deleteLead/:id').delete(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, deleteLead);
 router.route('/crm/deleteAllLeads').delete(isAuthorizedUser,
@@ -36,9 +36,9 @@ router.route('/crm/bulkDeleteLeads').post(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, bulkDeleteLeads);
 router.route('/crm/editLead/:id').patch(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, editLead);
-// superadmin-only bulk assign to agent
+// superadmin and admin (admin limited by controller checks)
 router.route('/crm/assignLeads').post(isAuthorizedUser,
-    authorizedRoles("superadmin"), checkCrmAccess, assignLeadsToAgent);
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, assignLeadsToAgent);
 router.route('/exportLeads').get(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, exportLeads);
 // router.route('/crm/leads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), uploadCSV);

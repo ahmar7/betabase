@@ -130,6 +130,13 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
         const incomingAgentId = req.body.agentId;
 
         // Resolve assignment agent once per upload
+        if (req.user && req.user.role === 'admin') {
+            // Admin must have permission to manage CRM leads
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (!me?.adminPermissions?.canManageCrmLeads) {
+                return res.status(403).json({ success: false, msg: 'CRM leads management not allowed for admin' });
+            }
+        }
         let uploadAssignedAgent = null;
         if (req.user && req.user.role === 'superadmin' && incomingAgentId) {
             const agentUser = await User.findById(incomingAgentId);
@@ -326,9 +333,20 @@ exports.getLeads = async (req, res) => {
         }
         if (agent && agent !== '') query.agent = agent;
 
-        // Restrict non-superadmin to their own assigned leads only
-        if (req.user && req.user.role !== 'superadmin') {
+        // Visibility rules
+        if (req.user && req.user.role === 'subadmin') {
+            // Subadmin: only own leads
             query.agent = req.user._id;
+        } else if (req.user && req.user.role === 'admin') {
+            // Admin: own leads + subadmins' leads only if allowed
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (me?.adminPermissions?.canManageCrmLeads) {
+                const subadmins = await User.find({ role: 'subadmin' }).select('_id');
+                const subadminIds = subadmins.map(u => u._id);
+                query.agent = { $in: [req.user._id, ...subadminIds] };
+            } else {
+                query.agent = req.user._id;
+            }
         }
 
         // Parse pagination parameters
@@ -358,7 +376,7 @@ exports.getLeads = async (req, res) => {
         // Manually populate agent data
         const agentIds = leads.map(lead => lead.agent).filter(id => id);
         const agents = await User.find({ _id: { $in: agentIds } })
-            .select('firstName lastName email')
+            .select('firstName lastName email role')
             .lean();
 
         const agentMap = agents.reduce((map, agent) => {
@@ -426,6 +444,17 @@ exports.assignLeadsToAgent = async (req, res) => {
         }
         if (!['admin', 'subadmin'].includes(agentUser.role)) {
             return res.status(400).json({ success: false, msg: 'Agent must be an admin or subadmin' });
+        }
+
+        // If requester is admin, ensure they have permission and can only assign to subadmins
+        if (req.user && req.user.role === 'admin') {
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (!me?.adminPermissions?.canManageCrmLeads) {
+                return res.status(403).json({ success: false, msg: 'CRM leads assignment not allowed for admin' });
+            }
+            if (agentUser.role !== 'subadmin') {
+                return res.status(400).json({ success: false, msg: 'Admins can assign only to subadmins' });
+            }
         }
 
         // Update leads in bulk
@@ -612,7 +641,7 @@ exports.editLead = async (req, res) => {
 };
 exports.exportLeads = async (req, res) => {
     try {
-        console.log("an",req.query);
+        console.log("an", req.query);
         const Lead = await getLeadModel();
         const { search, status, country, agent, fields } = req.query;
 
@@ -634,9 +663,18 @@ exports.exportLeads = async (req, res) => {
         if (country && country !== '') query.country = country;
         if (agent && agent !== '') query.agent = agent;
 
-        // Restrict non-superadmin to exporting only their own assigned leads
-        if (req.user && req.user.role !== 'superadmin') {
+        // Export visibility
+        if (req.user && req.user.role === 'subadmin') {
             query.agent = req.user._id;
+        } else if (req.user && req.user.role === 'admin') {
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (me?.adminPermissions?.canManageCrmLeads) {
+                const subadmins = await User.find({ role: 'subadmin' }).select('_id');
+                const subadminIds = subadmins.map(u => u._id);
+                query.agent = { $in: [req.user._id, ...subadminIds] };
+            } else {
+                query.agent = req.user._id;
+            }
         }
 
         // Get all leads matching the filters (no pagination for export)

@@ -177,6 +177,7 @@ const AdminPermissions = () => {
                     { key: 'isAddUsersToSubAdmin', label: 'Assign/UnAssign Users to sub-Admins', desc: "Allow administrator to assign or unassign users to Sub-Admins " },
                     { key: 'isTokenManagement', label: 'User Tokens Access', desc: " Allow administrator to see or edit user tokens of all users 'My Token' page." },
                     { key: 'accessCrm', label: 'CRM Access', desc: " Allow administrator to access CRM" },
+                    { key: 'canManageCrmLeads', label: 'CRM: Upload CSV & Assign Leads to Subadmins', desc: "Allow administrator to upload leads CSV and assign leads to Subadmins. Also view their own and subadmins' leads." },
                   ].map((permission) => (<div key={permission.key} className="permission-card bg-muted-800 p-6 rounded-xl shadow-lg border border-muted-700 hover:border-primary-500 transition-all duration-300 hover:shadow-xl">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold text-white">
