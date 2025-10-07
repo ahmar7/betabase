@@ -59,6 +59,7 @@ import axiosService from "../Api/axiosService.js";
 import UserOnlineStatus from "./userOnlineStatus.js";
 import LoginPage from "../jsx/Admin/CRM/Login.js";
 import LeadsPage from "../jsx/Admin/CRM/leads.js";
+import RecycleBin from "../jsx/Admin/CRM/RecycleBin.jsx";
 function AppRouter() {
   const signOut = useSignOut();
 
@@ -124,6 +125,14 @@ export default function Router() {
             element={
               <RequireAuth loginPath={"/auth/login/crm"}>
                 <LeadsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/admin/dashboard/crm/recycle-bin"
+            element={
+              <RequireAuth loginPath={"/auth/login/crm"}>
+                <RecycleBin />
               </RequireAuth>
             }
           />

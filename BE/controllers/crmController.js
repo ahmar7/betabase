@@ -285,6 +285,7 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
 exports.getLeads = async (req, res) => {
     try {
         const Lead = await getLeadModel();
+         
         const {
             search,
             status,
@@ -431,6 +432,7 @@ exports.getLeads = async (req, res) => {
 exports.assignLeadsToAgent = async (req, res) => {
     try {
         const Lead = await getLeadModel();
+      
         const { leadIds, agentId } = req.body;
 
         if (!Array.isArray(leadIds) || leadIds.length === 0 || !agentId) {
@@ -487,8 +489,9 @@ exports.deleteLead = async (req, res) => {
             });
         }
 
-        // Soft delete by setting isDeleted to true
+        // Soft delete by setting isDeleted to true and timestamp
         lead.isDeleted = true;
+        lead.deletedAt = new Date();
         await lead.save();
 
         res.status(200).json({
@@ -519,7 +522,7 @@ exports.bulkDeleteLeads = async (req, res) => {
 
         const result = await Lead.updateMany(
             { _id: { $in: leadIds } },
-            { $set: { isDeleted: true } }
+            { $set: { isDeleted: true, deletedAt: new Date() } }
         );
 
         res.status(200).json({
@@ -544,7 +547,7 @@ exports.deleteAllLeads = async (req, res) => {
 
         const result = await Lead.updateMany(
             { isDeleted: false },
-            { $set: { isDeleted: true } }
+            { $set: { isDeleted: true, deletedAt: new Date() } }
         );
 
         res.status(200).json({
@@ -738,5 +741,142 @@ exports.exportLeads = async (req, res) => {
             message: "Server Error",
             error: err.message
         });
+    }
+};
+
+// List deleted leads (recycle bin)
+exports.getDeletedLeads = async (req, res) => {
+    try {
+        const Lead = await getLeadModel();
+        const { page = 1, limit = 100, search, status, agent } = req.query;
+
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const skip = (pageNum - 1) * limitNum;
+
+        const query = { isDeleted: true };
+
+        if (search) {
+            const searchTrimmed = String(search).trim();
+            const regexGlobal = { $regex: searchTrimmed, $options: "i" };
+            const nameRegex = new RegExp(escapeRegex(searchTrimmed), 'i');
+            const parts = searchTrimmed.split(/\s+/);
+            query.$or = [
+                { firstName: regexGlobal },
+                { lastName: regexGlobal },
+                { email: regexGlobal },
+                { phone: regexGlobal },
+                { Brand: regexGlobal },
+                { Address: regexGlobal },
+                { $expr: { $regexMatch: { input: { $concat: ['$firstName', ' ', '$lastName'] }, regex: nameRegex } } }
+            ];
+            if (parts.length >= 2) {
+                const first = new RegExp(escapeRegex(parts[0]), 'i');
+                const last = new RegExp(escapeRegex(parts.slice(1).join(' ')), 'i');
+                query.$or.push({ $and: [{ firstName: first }, { lastName: last }] });
+                query.$or.push({ $and: [{ firstName: last }, { lastName: first }] });
+            }
+        }
+        if (status && status !== '') query.status = status;
+        if (agent && agent !== '') query.agent = agent;
+
+        // Visibility: subadmin only self; admin self + subadmins (if allowed)
+        if (req.user && req.user.role === 'subadmin') {
+            query.agent = req.user._id;
+        } else if (req.user && req.user.role === 'admin') {
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (me?.adminPermissions?.canManageCrmLeads) {
+                const subadmins = await User.find({ role: 'subadmin' }).select('_id');
+                const subadminIds = subadmins.map(u => u._id);
+                query.agent = { $in: [req.user._id, ...subadminIds] };
+            } else {
+                query.agent = req.user._id;
+            }
+        }
+
+        const [leadsRaw, totalFiltered] = await Promise.all([
+            Lead.find(query).sort({ deletedAt: -1 }).skip(skip).limit(limitNum).lean(),
+            Lead.countDocuments(query)
+        ]);
+
+        // Manual populate agent from main DB
+        const agentIds = leadsRaw.map(l => l.agent).filter(Boolean);
+        const agents = await User.find({ _id: { $in: agentIds } }).select('firstName lastName email role').lean();
+        const agentMap = agents.reduce((m, a) => { m[a._id.toString()] = a; return m; }, {});
+        const leads = leadsRaw.map(l => ({
+            ...l,
+            agent: l.agent ? agentMap[l.agent.toString()] || null : null,
+        }));
+
+        const totalPages = Math.ceil(totalFiltered / limitNum);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                leads,
+                pagination: {
+                    currentPage: pageNum,
+                    totalPages,
+                    totalFiltered,
+                    limit: limitNum,
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Error fetching deleted leads:', err);
+        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+    }
+};
+
+// Restore a soft-deleted lead
+exports.restoreLead = async (req, res) => {
+    try {
+        const Lead = await getLeadModel();
+        const lead = await Lead.findById(req.params.id);
+        if (!lead || !lead.isDeleted) return res.status(404).json({ success: false, msg: 'Lead not found or not deleted' });
+        lead.isDeleted = false;
+        lead.deletedAt = null;
+        await lead.save();
+        res.status(200).json({ success: true, msg: 'Lead restored successfully' });
+    } catch (err) {
+        console.error('Error restoring lead:', err);
+        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+    }
+};
+
+// Permanently delete a lead
+exports.hardDeleteLead = async (req, res) => {
+    try {
+        const Lead = await getLeadModel();
+        const result = await Lead.deleteOne({ _id: req.params.id, isDeleted: true });
+        if (result.deletedCount === 0) return res.status(404).json({ success: false, msg: 'Lead not found or not in recycle bin' });
+        res.status(200).json({ success: true, msg: 'Lead permanently deleted' });
+    } catch (err) {
+        console.error('Error hard deleting lead:', err);
+        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+    }
+};
+
+exports.bulkRestoreLeads = async (req, res) => {
+    try {
+        const { leadIds } = req.body;
+        const Lead = await getLeadModel();
+        const result = await Lead.updateMany({ _id: { $in: leadIds }, isDeleted: true }, { $set: { isDeleted: false, deletedAt: null } });
+        res.status(200).json({ success: true, msg: `${result.modifiedCount} lead(s) restored`, data: { restored: result.modifiedCount } });
+    } catch (err) {
+        console.error('Error bulk restoring leads:', err);
+        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+    }
+};
+
+exports.bulkHardDeleteLeads = async (req, res) => {
+    try {
+        const { leadIds } = req.body;
+        const Lead = await getLeadModel();
+        const result = await Lead.deleteMany({ _id: { $in: leadIds }, isDeleted: true });
+        res.status(200).json({ success: true, msg: `${result.deletedCount} lead(s) permanently deleted`, data: { deleted: result.deletedCount } });
+    } catch (err) {
+        console.error('Error bulk hard deleting leads:', err);
+        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
     }
 };

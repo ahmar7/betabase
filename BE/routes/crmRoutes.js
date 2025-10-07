@@ -3,7 +3,7 @@ let express = require("express");
 const { authorizedRoles, isAuthorizedUser, checkCrmAccess } = require("../middlewares/auth");
 
 const singleUpload = require("../middlewares/multer");
-const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent } = require("../controllers/crmController");
+const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent, getDeletedLeads, restoreLead, hardDeleteLead, bulkRestoreLeads, bulkHardDeleteLeads } = require("../controllers/crmController");
 const multer = require('multer');
 
 // Configure multer for file uploads
@@ -41,6 +41,17 @@ router.route('/crm/assignLeads').post(isAuthorizedUser,
     authorizedRoles("superadmin", "admin"), checkCrmAccess, assignLeadsToAgent);
 router.route('/exportLeads').get(isAuthorizedUser,
     authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, exportLeads);
+// recycle bin
+router.route('/crm/recycle/list').get(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, getDeletedLeads);
+router.route('/crm/recycle/restore/:id').patch(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, restoreLead);
+router.route('/crm/recycle/hardDelete/:id').delete(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, hardDeleteLead);
+router.route('/crm/recycle/bulkRestore').post(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, bulkRestoreLeads);
+router.route('/crm/recycle/bulkHardDelete').post(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, bulkHardDeleteLeads);
 // router.route('/crm/leads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), uploadCSV);
 
 module.exports = router;

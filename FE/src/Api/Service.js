@@ -280,3 +280,20 @@ export const exportLeadsApi = (filters = {}) => {
 export const assignLeadsApi = (leadIds, agentId) => {
   return postApi(`/crm/assignLeads`, { leadIds, agentId });
 };
+// Recycle Bin APIs
+export const listDeletedLeadsApi = (params) => {
+  const queryString = new URLSearchParams(params).toString();
+  return getApi(`/crm/recycle/list?${queryString}`);
+};
+export const restoreLeadApi = (leadId) => {
+  return patchApi(`/crm/recycle/restore/${leadId}`);
+};
+export const hardDeleteLeadApi = (leadId) => {
+  return deleteApi(`/crm/recycle/hardDelete/${leadId}`);
+};
+export const bulkRestoreLeadsApi = (leadIds) => {
+  return postApi(`/crm/recycle/bulkRestore`, { leadIds });
+};
+export const bulkHardDeleteLeadsApi = (leadIds) => {
+  return postApi(`/crm/recycle/bulkHardDelete`, { leadIds });
+};

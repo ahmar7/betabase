@@ -22,6 +22,7 @@ import {
   Logout,
   Menu,
 } from '@mui/icons-material';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { useAuthUser, useSignOut } from "react-auth-kit";
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { logoutApi } from '../../../Api/Service';
@@ -41,6 +42,11 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     { icon: <Dashboard />, label: 'Dashboard', link: "/admin/dashboard" },
     { icon: <People />, label: 'Leads', link: "/admin/dashboard/crm" },
   ];
+
+  // Add Recycle Bin for superadmin
+  if (user()?.user?.role === 'superadmin') {
+    menuItems.push({ icon: <DeleteForeverIcon />, label: 'Recycle Bin', link: "/admin/dashboard/crm/recycle-bin" });
+  }
 
   const handleLogout = async () => {
     try {

@@ -24,6 +24,7 @@ const leadSchema = new mongoose.Schema({
   },
   notes: [noteSchema],
   isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date },
 });

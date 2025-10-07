@@ -17,6 +17,7 @@ app.use(cookieParser());
 //
 
 const cron = require("node-cron");
+const getLeadModel = require("./crmDB/models/leadsModel");
 let ALLOWED_ORIGINS = [
   "https://betabase.pro",
   "https://www.betabase.pro",
@@ -293,6 +294,19 @@ cron.schedule("0 0 * * *", async () => { // ✅ runs daily at midnight
     console.log(`✅ Logs cleared: ${result.deletedCount} old entries`);
   } catch (err) {
     console.error("❌ Error in clearing logs:", err);
+  }
+});
+
+// Purge soft-deleted leads older than 30 days
+cron.schedule("0 1 * * *", async () => { // daily at 01:00
+  try {
+    const Lead = await getLeadModel();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const result = await Lead.deleteMany({ isDeleted: true, deletedAt: { $lt: cutoff } });
+    console.log(`🗑️ Recycle bin purge: ${result.deletedCount} lead(s) removed`);
+  } catch (err) {
+    console.error("❌ Error purging deleted leads:", err);
   }
 });
 
