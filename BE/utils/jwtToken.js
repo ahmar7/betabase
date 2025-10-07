@@ -14,6 +14,7 @@ const jwtToken = (user, statusCode, res) => {
     sameSite,
     secure,
     path: '/',
+    domain: process.env.COOKIE_DOMAIN || undefined,
   };
 
   res.status(statusCode).cookie('jwttoken', token, options).json({
