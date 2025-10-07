@@ -43,7 +43,7 @@ const LoginPage = () => {
                 }
                 const updateHeader = await adminCrmLoginApi(body)
                 // simulate API call
-
+                console.log('updateHeader: ', updateHeader);
                 let newData = updateHeader;
                 if (updateHeader.success === true && updateHeader.link === false) {
 
