@@ -33,6 +33,7 @@ import {
   hardDeleteLeadApi,
 } from "../../../Api/Service";
 import Sidebar from "./Sidebar.js";
+import { toast } from "react-toastify";
 
 const RecycleBin = () => {
   const authUser = useAuthUser();
@@ -53,6 +54,10 @@ const RecycleBin = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenu, setisMobileMenu] = useState(false);
   const [filters, setFilters] = useState({ search: '', status: '', agent: '' });
+  const [restoringId, setRestoringId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [bulkRestoring, setBulkRestoring] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -129,24 +134,56 @@ const RecycleBin = () => {
 
   const restoreSelected = async () => {
     if (selected.size === 0) return;
-    await bulkRestoreLeadsApi(Array.from(selected));
-    fetchDeleted(pagination.currentPage);
+    try {
+      setBulkRestoring(true);
+      const res = await bulkRestoreLeadsApi(Array.from(selected));
+      toast.success(res?.msg || 'Selected leads restored');
+      fetchDeleted(pagination.currentPage);
+    } catch (e) {
+      toast.error('Failed to restore selected leads');
+    } finally {
+      setBulkRestoring(false);
+    }
   };
 
   const deleteSelected = async () => {
     if (selected.size === 0) return;
-    await bulkHardDeleteLeadsApi(Array.from(selected));
-    fetchDeleted(pagination.currentPage);
+    try {
+      setBulkDeleting(true);
+      const res = await bulkHardDeleteLeadsApi(Array.from(selected));
+      toast.success(res?.msg || 'Selected leads permanently deleted');
+      fetchDeleted(pagination.currentPage);
+    } catch (e) {
+      toast.error('Failed to delete selected leads');
+    } finally {
+      setBulkDeleting(false);
+    }
   };
 
   const restoreOne = async (id) => {
-    await restoreLeadApi(id);
-    fetchDeleted(pagination.currentPage);
+    try {
+      setRestoringId(id);
+      const res = await restoreLeadApi(id);
+      toast.success(res?.msg || 'Lead restored');
+      fetchDeleted(pagination.currentPage);
+    } catch (e) {
+      toast.error('Failed to restore lead');
+    } finally {
+      setRestoringId(null);
+    }
   };
 
   const deleteOne = async (id) => {
-    await hardDeleteLeadApi(id);
-    fetchDeleted(pagination.currentPage);
+    try {
+      setDeletingId(id);
+      const res = await hardDeleteLeadApi(id);
+      toast.success(res?.msg || 'Lead permanently deleted');
+      fetchDeleted(pagination.currentPage);
+    } catch (e) {
+      toast.error('Failed to delete lead');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleLimit = (e) => {
@@ -235,8 +272,12 @@ const RecycleBin = () => {
               <Typography variant="body1" fontWeight="bold">{selected.size} lead(s) selected</Typography>
               <Box sx={{ display: 'flex', gap: 1 }}>
                 <Button variant="outlined" startIcon={<DeselectOutlined />} onClick={() => setSelected(new Set())}>Deselect All</Button>
-                <Button variant="contained" startIcon={<Restore />} onClick={restoreSelected}>Restore Selected</Button>
-                <Button color="error" variant="contained" startIcon={<DeleteForever />} onClick={deleteSelected}>Delete Selected</Button>
+                <Button variant="contained" startIcon={<Restore />} onClick={restoreSelected} disabled={bulkRestoring || loading}>
+                  {bulkRestoring ? 'Restoring...' : 'Restore Selected'}
+                </Button>
+                <Button color="error" variant="contained" startIcon={<DeleteForever />} onClick={deleteSelected} disabled={bulkDeleting || loading}>
+                  {bulkDeleting ? 'Deleting...' : 'Delete Selected'}
+                </Button>
               </Box>
             </Box>
           </CardContent>
@@ -282,8 +323,12 @@ const RecycleBin = () => {
                       <Chip size="small" label={daysRemaining(l.deletedAt, l.updatedAt)} color="warning" />
                     </TableCell>
                     <TableCell align="right">
-                      <Button size="small" startIcon={<Restore />} onClick={() => restoreOne(l._id)}>Restore</Button>
-                      <Button size="small" color="error" startIcon={<DeleteForever />} onClick={() => deleteOne(l._id)}>Delete</Button>
+                      <Button size="small" startIcon={<Restore />} onClick={() => restoreOne(l._id)} disabled={restoringId === l._id || loading}>
+                        {restoringId === l._id ? 'Restoring...' : 'Restore'}
+                      </Button>
+                      <Button size="small" color="error" startIcon={<DeleteForever />} onClick={() => deleteOne(l._id)} disabled={deletingId === l._id || loading}>
+                        {deletingId === l._id ? 'Deleting...' : 'Delete'}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
