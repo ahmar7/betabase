@@ -1085,15 +1085,13 @@ const LeadsPage = () => {
         "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City",
         "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
     ]);
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-    const [isMobileMenu, setisMobileMenu] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+    const [isMobileMenu, setisMobileMenu] = useState(true)
     useEffect(() => {
         const handleResize = () => {
             if (window.innerWidth < 768) {
                 setIsSidebarCollapsed(false); // collapse on mobile
-            } else {
-                setIsSidebarCollapsed(true); // expand on desktop
-            }
+            }  
         };
 
         // Run once on mount

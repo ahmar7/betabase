@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Drawer,
@@ -11,6 +11,8 @@ import {
   IconButton,
   Divider,
   Avatar,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import {
   ChevronLeft,
@@ -21,7 +23,7 @@ import {
   Menu,
 } from '@mui/icons-material';
 import { useAuthUser, useSignOut } from "react-auth-kit";
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { logoutApi } from '../../../Api/Service';
 import { toast } from 'react-toastify';
 
@@ -29,47 +31,58 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
   const user = useAuthUser();
   const signOut = useSignOut();
   const navigate = useNavigate();
+  const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
+  const [drawerVariant, setDrawerVariant] = useState(isMobile ? "temporary" : "permanent");
 
   const menuItems = [
     { icon: <Dashboard />, label: 'Dashboard', link: "/admin/dashboard" },
     { icon: <People />, label: 'Leads', link: "/admin/dashboard/crm" },
   ];
 
-  const bottomMenuItems = [
-    { icon: <Logout />, label: 'Logout' },
-  ];
-
-  // const handleLogout = async () => {
-  //   try {
-  //     const logout = await logoutApi();
-  //     if (logout.success) {
-  //       signOut();
-  //       navigate("/auth/login/crm");
-  //     } else {
-  //       toast.error(logout.msg);
-  //     }
-  //   } catch (error) {
-  //     toast.error(error.message || "Logout failed");
-  //   }
-  // };
+  const handleLogout = async () => {
+    try {
+      const logout = await logoutApi();
+      if (logout.success) {
+        signOut();
+        navigate("/auth/login/crm");
+      } else {
+        toast.error(logout.msg);
+      }
+    } catch (error) {
+      toast.error(error.message || "Logout failed");
+    }
+  };
 
   const drawerWidth = isCollapsed ? 80 : 280;
 
-  // Close sidebar automatically when screen width > 768px
+  // Handle responsive behavior
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 768 && isMobileMenu) {
+      if (window.innerWidth >= 768) {
+        setDrawerVariant("permanent");
         setisMobileMenu(false);
+      } else {
+        setDrawerVariant("temporary");
       }
     };
+
     window.addEventListener('resize', handleResize);
+    handleResize(); // Initialize on mount
+
     return () => window.removeEventListener('resize', handleResize);
-  }, [isMobileMenu]);
+  }, [isMobileMenu, setisMobileMenu]);
+
+  const isActiveLink = (link) => {
+    return location.pathname === link;
+  };
 
   return (
     <Drawer
-      variant={window.innerWidth < 768 ? "temporary" : "permanent"}
-      open={window.innerWidth < 768 ? isMobileMenu : true}
+      variant={drawerVariant}
+      open={isMobile ? isMobileMenu : true}
       onClose={() => setisMobileMenu(false)}
       sx={{
         width: { xs: 280, md: drawerWidth },
@@ -79,7 +92,8 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
           boxSizing: 'border-box',
           border: 'none',
           boxShadow: '0 0 20px rgba(0,0,0,0.1)',
-          transition: 'width 0.3s ease',
+          transition: 'width 0.3s ease, transform 0.3s ease',
+          overflowX: 'hidden',
         },
       }}
     >
@@ -119,17 +133,21 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
       </Box>
 
       {/* Menu Items */}
-      <Box sx={{ flex: 1, p: 1 }}>
+      <Box sx={{ flex: 1, p: 1, overflow: 'auto' }}>
         <List>
           {menuItems.map((item, index) => (
-            <ListItem key={index} disablePadding>
+            <ListItem key={index} disablePadding sx={{ mb: 0.5 }}>
               <ListItemButton
                 component={Link}
                 to={item.link}
+                onClick={() => isMobile && setisMobileMenu(false)}
                 sx={{
                   borderRadius: 2,
-                  color: 'text.secondary',
-                  '&:hover': { backgroundColor: 'action.hover' },
+                  color: isActiveLink(item.link) ? 'primary.main' : 'text.secondary',
+                  backgroundColor: isActiveLink(item.link) ? 'action.selected' : 'transparent',
+                  '&:hover': { 
+                    backgroundColor: isActiveLink(item.link) ? 'action.selected' : 'action.hover' 
+                  },
                   justifyContent: isCollapsed ? 'center' : 'flex-start',
                   px: 2,
                   py: 1.5,
@@ -149,7 +167,7 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                     primary={item.label}
                     primaryTypographyProps={{
                       fontSize: '0.875rem',
-                      fontWeight: 500,
+                      fontWeight: isActiveLink(item.link) ? 600 : 500,
                     }}
                   />
                 )}
@@ -161,58 +179,62 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
 
       <Divider />
 
-      {/* Bottom Section */}
+      {/* Bottom Section - Logout */}
       <Box sx={{ p: 1 }}>
         <List>
-          {bottomMenuItems.map((item, index) => (
-            <ListItem key={index} disablePadding onClick={item.onClick}>
-              <ListItemButton
+          <ListItem disablePadding>
+            <ListItemButton
+              onClick={handleLogout}
+              sx={{
+                borderRadius: 2,
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
+                px: 2,
+                py: 1.5,
+                color: 'text.secondary',
+                '&:hover': { 
+                  backgroundColor: 'error.light',
+                  color: 'error.main'
+                },
+              }}
+            >
+              <ListItemIcon
                 sx={{
-                  borderRadius: 2,
-                  justifyContent: isCollapsed ? 'center' : 'flex-start',
-                  px: 2,
-                  py: 1.5,
+                  minWidth: 'auto',
+                  color: 'inherit',
+                  mr: isCollapsed ? 0 : 2,
                 }}
               >
-                <ListItemIcon
-                  sx={{
-                    minWidth: 'auto',
-                    color: 'text.secondary',
-                    mr: isCollapsed ? 0 : 2,
-                  }}
-                >
-                  {item.icon}
-                </ListItemIcon>
-                {!isCollapsed && (
-                  <ListItemText
-                    primary={item.label}
-                    primaryTypographyProps={{ fontSize: '0.875rem' }}
-                  />
-                )}
-              </ListItemButton>
-            </ListItem>
-          ))}
+                <Logout />
+              </ListItemIcon>
+              {!isCollapsed && (
+                <ListItemText
+                  primary="Logout"
+                  primaryTypographyProps={{ fontSize: '0.875rem' }}
+                />
+              )}
+            </ListItemButton>
+          </ListItem>
         </List>
       </Box>
 
       {/* User Profile */}
-      <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-            {user()?.user?.firstName?.[0] || 'U'}
-          </Avatar>
-          {!isCollapsed && (
+      {!isCollapsed && (
+        <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+              {user()?.user?.firstName?.[0] || 'U'}
+            </Avatar>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }} noWrap>
                 {user()?.user?.firstName} {user()?.user?.lastName}
               </Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap>
                 {user()?.user?.email}
               </Typography>
             </Box>
-          )}
+          </Box>
         </Box>
-      </Box>
+      )}
     </Drawer>
   );
 };
