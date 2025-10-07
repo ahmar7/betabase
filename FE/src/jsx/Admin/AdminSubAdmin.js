@@ -467,7 +467,7 @@ const AdminSubAdmin = () => {
                               </Box>
 
                               {/* Permission Switches */}
-                              {authUser().user.role === 'superadmin' || signedAdmin ?
+                              {authUser().user.role === "admin" && signedAdmin || authUser().user.role === "superadmin" ?
                                 <Box>
                                   <Typography variant="subtitle2" fontWeight={600} sx={{ color: 'grey.400', mb: 1 }}>
                                     Permissions to manage users:

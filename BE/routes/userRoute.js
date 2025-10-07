@@ -101,7 +101,7 @@ router
 router.route("/restrictions").get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin", "user"), getUsersRestrictions);
 
 // PUT – only admin should access this
-router.route("/restrictionsUpdate").patch(authorizedRoles("superadmin", "admin", "subadmin"), updateUsersRestrictions);
+router.route("/restrictionsUpdate").patch(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), updateUsersRestrictions);
 router.route("/users/:id/permissions").patch(isAuthorizedUser, authorizedRoles("superadmin", "admin"), updateSubAdminPermissions);
 router.route("/admin/:id/permissions").patch(isAuthorizedUser, authorizedRoles("superadmin"), updateAdminPermissions);
 router.route("/getErrorLogs").get(isAuthorizedUser, authorizedRoles("superadmin"), getLogs);
