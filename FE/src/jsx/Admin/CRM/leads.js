@@ -113,7 +113,7 @@ const AVAILABLE_FIELDS = [
 const STATUS_OPTIONS = ["New", "Call Back", "Not Active", "Active", "Not Interested"];
 
 // Enhanced Create Lead Dialog Component
-const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser }) => {
+const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, allowCsvUpload }) => {
 
     const [activeStep, setActiveStep] = useState(0);
     const [tabValue, setTabValue] = useState(0);
@@ -146,12 +146,12 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
 
     const steps = ['Choose Method', 'Upload & Map Fields', 'Review & Submit'];
 
-    // Prevent CSV tab for subadmins
+    // Prevent CSV tab when not allowed (subadmin or admin without permission)
     useEffect(() => {
-        if (currentUser?.user?.role === 'subadmin' && tabValue === 1) {
+        if (!allowCsvUpload && tabValue === 1) {
             setTabValue(0);
         }
-    }, [currentUser, tabValue]);
+    }, [allowCsvUpload, tabValue]);
 
     // Initialize selected fields
     useEffect(() => {
@@ -389,7 +389,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
                         <StepContent>
                             <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 2 }}>
                                 <Tab label="Manual Entry" />
-                                {currentUser?.user?.role !== 'subadmin' && (
+                                {allowCsvUpload && (
                                     <Tab label="CSV Upload" />
                                 )}
                             </Tabs>
@@ -405,7 +405,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser })
                                 </Box>
                             )}
 
-                            {tabValue === 1 && currentUser?.user?.role !== 'subadmin' && (
+                            {tabValue === 1 && allowCsvUpload && (
                                 <Box>
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                                         Upload a CSV file to create multiple leads at once
@@ -1987,6 +1987,7 @@ const LeadsPage = () => {
                 onLeadCreated={handleLeadCreated}
                 agents={agents}
                 currentUser={currentAuthUser}
+                allowCsvUpload={currentUserLatest?.role === 'superadmin' || (currentUserLatest?.role === 'admin' && currentUserLatest?.adminPermissions?.canManageCrmLeads)}
             />
 
             {/* View Details Dialog */}
