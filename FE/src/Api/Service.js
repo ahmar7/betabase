@@ -8,6 +8,7 @@ import {
   patchFormApi,getBlobApi,
   postFormStreamApi
 } from "./axiosService";
+import { baseUrl } from "../utils/Constant";
 
 export const registerApi = (data) => {
   return postApi("adminUserRegistration", data);
@@ -275,6 +276,60 @@ export const deleteLeadsBulkApi = (leadIds) => {
 export const deleteAllLeadsApi = () => {
   return deleteApi(`/crm/deleteAllLeads`);
 };
+// Delete all leads with progress tracking (SSE)
+export const deleteAllLeadsApiWithProgress = async (onProgress) => {
+  try {
+    const response = await fetch(`${baseUrl}/crm/deleteAllLeads?enableProgress=true`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Delete failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const eventData = JSON.parse(line.substring(6));
+            if (onProgress) {
+              onProgress(eventData);
+            }
+            
+            // If complete or error, return
+            if (eventData.type === 'complete') {
+              return eventData;
+            } else if (eventData.type === 'error') {
+              throw new Error(eventData.message || 'Failed to delete leads');
+            }
+          } catch (parseError) {
+            console.error('Error parsing SSE data:', parseError);
+            throw parseError;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting all leads:', error);
+    throw error;
+  }
+};
 export const updateLeadApi = (leadId, leadData) => {
   return patchApi(`/crm/editLead/${leadId}`, leadData);
 };
@@ -301,6 +356,118 @@ export const bulkRestoreLeadsApi = (leadIds) => {
 export const bulkHardDeleteLeadsApi = (leadIds) => {
   return postApi(`/crm/recycle/bulkHardDelete`, { leadIds });
 };
+
+// Restore all leads with progress tracking (SSE)
+export const restoreAllLeadsApiWithProgress = async (onProgress) => {
+  try {
+    const response = await fetch(`${baseUrl}/crm/recycle/restoreAll`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Restore failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const eventData = JSON.parse(line.substring(6));
+            if (onProgress) {
+              onProgress(eventData);
+            }
+            
+            // If complete or error, return
+            if (eventData.type === 'complete') {
+              return eventData;
+            } else if (eventData.type === 'error') {
+              throw new Error(eventData.message || 'Failed to restore leads');
+            }
+          } catch (parseError) {
+            console.error('Error parsing SSE data:', parseError);
+            throw parseError;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error restoring all leads:', error);
+    throw error;
+  }
+};
+
+// Delete all leads with progress tracking (SSE)
+export const hardDeleteAllLeadsApiWithProgress = async (onProgress) => {
+  try {
+    const response = await fetch(`${baseUrl}/crm/recycle/hardDeleteAll`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Delete failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const eventData = JSON.parse(line.substring(6));
+            if (onProgress) {
+              onProgress(eventData);
+            }
+            
+            // If complete or error, return
+            if (eventData.type === 'complete') {
+              return eventData;
+            } else if (eventData.type === 'error') {
+              throw new Error(eventData.message || 'Failed to delete leads');
+            }
+          } catch (parseError) {
+            console.error('Error parsing SSE data:', parseError);
+            throw parseError;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error permanently deleting all leads:', error);
+    throw error;
+  }
+};
+
+// Fallback API calls (without progress)
 export const restoreAllLeadsApi = () => {
   return postApi(`/crm/recycle/restoreAll`);
 };

@@ -712,6 +712,9 @@ exports.bulkDeleteLeads = async (req, res) => {
 exports.deleteAllLeads = async (req, res) => {
     try {
         const Lead = await getLeadModel();
+        
+        // Check if progress tracking is requested
+        const enableProgress = req.query.enableProgress === 'true';
 
         // ✅ SECURITY: Build query based on user role - only delete leads they have access to
         let query = { isDeleted: false };
@@ -733,24 +736,134 @@ exports.deleteAllLeads = async (req, res) => {
         }
         // Superadmin can delete all leads (no additional query filter)
 
-        const result = await Lead.updateMany(
-            query,
-            { $set: { isDeleted: true, deletedAt: new Date() } }
-        );
+        // If progress tracking is enabled, use SSE with batch processing
+        if (enableProgress) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders();
 
-        res.status(200).json({
-            success: true,
-            msg: `All ${result.modifiedCount} leads deleted successfully`,
-            data: { deletedCount: result.modifiedCount }
-        });
+            const sendProgress = (data) => {
+                res.write(`data: ${JSON.stringify(data)}\n\n`);
+            };
+
+            // Get total count
+            const total = await Lead.countDocuments(query);
+
+            if (total === 0) {
+                sendProgress({
+                    type: 'complete',
+                    total: 0,
+                    deleted: 0,
+                    msg: 'No leads to delete'
+                });
+                res.end();
+                return;
+            }
+
+            sendProgress({
+                type: 'start',
+                total,
+                percentage: 0,
+                msg: `Starting deletion of ${total} leads...`
+            });
+
+            // Process in batches for better performance
+            const BATCH_SIZE = 5000; // Larger batch for soft deletes (faster than hard delete)
+            let deletedCount = 0;
+            let hasMore = true;
+
+            while (hasMore) {
+                // Find batch of leads to delete
+                const batch = await Lead.find(query)
+                    .limit(BATCH_SIZE)
+                    .select('_id')
+                    .lean();
+
+                if (batch.length === 0) {
+                    hasMore = false;
+                    break;
+                }
+
+                const batchIds = batch.map(lead => lead._id);
+
+                // Soft delete this batch
+                const result = await Lead.updateMany(
+                    { _id: { $in: batchIds }, isDeleted: false },
+                    { $set: { isDeleted: true, deletedAt: new Date() } }
+                );
+
+                deletedCount += result.modifiedCount;
+
+                // Send progress update
+                const percentage = Math.min(Math.round((deletedCount / total) * 100), 100);
+                sendProgress({
+                    type: 'progress',
+                    total,
+                    deleted: deletedCount,
+                    remaining: total - deletedCount,
+                    percentage,
+                    msg: `Deleted ${deletedCount} of ${total} leads...`
+                });
+
+                // If we processed less than batch size, we're done
+                if (batch.length < BATCH_SIZE) {
+                    hasMore = false;
+                }
+            }
+
+            // Send completion
+            sendProgress({
+                type: 'complete',
+                total,
+                deleted: deletedCount,
+                percentage: 100,
+                success: true,
+                msg: `All ${deletedCount} leads deleted successfully`
+            });
+
+            res.end();
+        } else {
+            // Fallback: non-progress version for backward compatibility
+            const result = await Lead.updateMany(
+                query,
+                { $set: { isDeleted: true, deletedAt: new Date() } }
+            );
+
+            res.status(200).json({
+                success: true,
+                msg: `All ${result.modifiedCount} leads deleted successfully`,
+                data: { deletedCount: result.modifiedCount }
+            });
+        }
 
     } catch (err) {
         console.error("Error deleting all leads:", err);
-        res.status(500).json({
-            success: false,
-            message: "Server Error",
-            error: err.message
-        });
+        
+        // Try to send error through SSE if using progress
+        if (req.query.enableProgress === 'true') {
+            try {
+                res.write(`data: ${JSON.stringify({
+                    type: 'error',
+                    message: err.message || 'Failed to delete leads'
+                })}\n\n`);
+                res.end();
+            } catch (e) {
+                if (!res.headersSent) {
+                    res.status(500).json({
+                        success: false,
+                        message: "Server Error",
+                        error: err.message
+                    });
+                }
+            }
+        } else {
+            res.status(500).json({
+                success: false,
+                message: "Server Error",
+                error: err.message
+            });
+        }
     }
 };
 exports.editLead = async (req, res) => {
@@ -1099,37 +1212,227 @@ exports.bulkHardDeleteLeads = async (req, res) => {
     }
 };
 
-// Restore ALL deleted leads
+// Restore ALL deleted leads with batch processing and progress tracking
 exports.restoreAllLeads = async (req, res) => {
     try {
         const Lead = await getLeadModel();
-        const result = await Lead.updateMany(
-            { isDeleted: true },
-            { $set: { isDeleted: false, deletedAt: null } }
-        );
-        res.status(200).json({
-            success: true,
-            msg: `All ${result.modifiedCount} lead(s) restored from recycle bin`,
-            data: { restored: result.modifiedCount }
+        
+        // Enable Server-Sent Events for progress tracking
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+
+        const sendProgress = (data) => {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+
+        // Get total count of deleted leads
+        const total = await Lead.countDocuments({ isDeleted: true });
+
+        if (total === 0) {
+            sendProgress({
+                type: 'complete',
+                total: 0,
+                restored: 0,
+                msg: 'No leads to restore'
+            });
+            res.end();
+            return;
+        }
+
+        sendProgress({
+            type: 'start',
+            total,
+            percentage: 0,
+            msg: `Starting restore of ${total} leads...`
         });
+
+        // Process in batches for better performance
+        const BATCH_SIZE = 2000;
+        let restoredCount = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            // Find batch of deleted leads
+            const batch = await Lead.find({ isDeleted: true })
+                .limit(BATCH_SIZE)
+                .select('_id')
+                .lean();
+
+            if (batch.length === 0) {
+                hasMore = false;
+                break;
+            }
+
+            const batchIds = batch.map(lead => lead._id);
+
+            // Restore this batch
+            const result = await Lead.updateMany(
+                { _id: { $in: batchIds }, isDeleted: true },
+                { $set: { isDeleted: false, deletedAt: null } }
+            );
+
+            restoredCount += result.modifiedCount;
+
+            // Send progress update
+            const percentage = Math.min(Math.round((restoredCount / total) * 100), 100);
+            sendProgress({
+                type: 'progress',
+                total,
+                restored: restoredCount,
+                remaining: total - restoredCount,
+                percentage,
+                msg: `Restored ${restoredCount} of ${total} leads...`
+            });
+
+            // If we restored less than batch size, we're done
+            if (batch.length < BATCH_SIZE) {
+                hasMore = false;
+            }
+        }
+
+        // Send completion
+        sendProgress({
+            type: 'complete',
+            total,
+            restored: restoredCount,
+            percentage: 100,
+            success: true,
+            msg: `All ${restoredCount} lead(s) restored from recycle bin`
+        });
+
+        res.end();
     } catch (err) {
         console.error('Error restoring all leads:', err);
-        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+        
+        // Try to send error through SSE if headers not sent yet
+        try {
+            res.write(`data: ${JSON.stringify({
+                type: 'error',
+                message: err.message || 'Failed to restore leads'
+            })}\n\n`);
+            res.end();
+        } catch (e) {
+            // If SSE fails, send regular error response
+            if (!res.headersSent) {
+                res.status(500).json({ 
+                    success: false, 
+                    message: 'Server Error', 
+                    error: err.message 
+                });
+            }
+        }
     }
 };
 
-// Permanently delete ALL leads from recycle bin
+// Permanently delete ALL leads from recycle bin with batch processing and progress tracking
 exports.hardDeleteAllLeads = async (req, res) => {
     try {
         const Lead = await getLeadModel();
-        const result = await Lead.deleteMany({ isDeleted: true });
-        res.status(200).json({
-            success: true,
-            msg: `All ${result.deletedCount} lead(s) permanently deleted from recycle bin`,
-            data: { deleted: result.deletedCount }
+        
+        // Enable Server-Sent Events for progress tracking
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+
+        const sendProgress = (data) => {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+
+        // Get total count of deleted leads
+        const total = await Lead.countDocuments({ isDeleted: true });
+
+        if (total === 0) {
+            sendProgress({
+                type: 'complete',
+                total: 0,
+                deleted: 0,
+                msg: 'No leads to delete'
+            });
+            res.end();
+            return;
+        }
+
+        sendProgress({
+            type: 'start',
+            total,
+            percentage: 0,
+            msg: `Starting permanent deletion of ${total} leads...`
         });
+
+        // Process in batches for better performance
+        const BATCH_SIZE = 2000;
+        let deletedCount = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            // Find batch of deleted leads
+            const batch = await Lead.find({ isDeleted: true })
+                .limit(BATCH_SIZE)
+                .select('_id')
+                .lean();
+
+            if (batch.length === 0) {
+                hasMore = false;
+                break;
+            }
+
+            const batchIds = batch.map(lead => lead._id);
+
+            // Permanently delete this batch
+            const result = await Lead.deleteMany({ _id: { $in: batchIds }, isDeleted: true });
+
+            deletedCount += result.deletedCount;
+
+            // Send progress update
+            const percentage = Math.min(Math.round((deletedCount / total) * 100), 100);
+            sendProgress({
+                type: 'progress',
+                total,
+                deleted: deletedCount,
+                remaining: total - deletedCount,
+                percentage,
+                msg: `Deleted ${deletedCount} of ${total} leads...`
+            });
+
+            // If we deleted less than batch size, we're done
+            if (batch.length < BATCH_SIZE) {
+                hasMore = false;
+            }
+        }
+
+        // Send completion
+        sendProgress({
+            type: 'complete',
+            total,
+            deleted: deletedCount,
+            percentage: 100,
+            success: true,
+            msg: `All ${deletedCount} lead(s) permanently deleted from recycle bin`
+        });
+
+        res.end();
     } catch (err) {
         console.error('Error permanently deleting all leads:', err);
-        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+        
+        // Try to send error through SSE if headers not sent yet
+        try {
+            res.write(`data: ${JSON.stringify({
+                type: 'error',
+                message: err.message || 'Failed to delete leads'
+            })}\n\n`);
+            res.end();
+        } catch (e) {
+            // If SSE fails, send regular error response
+            if (!res.headersSent) {
+                res.status(500).json({ 
+                    success: false, 
+                    message: 'Server Error', 
+                    error: err.message 
+                });
+            }
+        }
     }
 };

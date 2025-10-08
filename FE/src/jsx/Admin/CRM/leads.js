@@ -91,6 +91,7 @@ import {
     deleteLeadApi,
     deleteLeadsBulkApi,
     deleteAllLeadsApi,
+    deleteAllLeadsApiWithProgress,
     updateLeadApi, exportLeadsApi,
     allUsersApi,
     assignLeadsApi
@@ -1336,6 +1337,13 @@ const LeadsPage = () => {
     const [assignDialogOpen, setAssignDialogOpen] = useState(false);
     const [assigning, setAssigning] = useState(false);
     const [selectedAgentId, setSelectedAgentId] = useState("");
+    const [deleteProgress, setDeleteProgress] = useState({
+        total: 0,
+        deleted: 0,
+        percentage: 0,
+        isProcessing: false,
+        msg: ''
+    });
 
     // Toggle sidebar
     const currentAuthUser = authUser();
@@ -1501,31 +1509,94 @@ const LeadsPage = () => {
             switch (deleteType) {
                 case 'single':
                     response = await deleteLeadApi(selectedLead._id);
+                    if (response.success) {
+                        toast.success(response.msg || 'Lead deleted successfully');
+                        fetchLeads(pagination.currentPage);
+                    } else {
+                        toast.error(response.msg || 'Failed to delete lead');
+                    }
                     break;
+                    
                 case 'bulk':
                     response = await deleteLeadsBulkApi(Array.from(selectedLeads));
+                    if (response.success) {
+                        toast.success(response.msg || 'Leads deleted successfully');
+                        fetchLeads(pagination.currentPage);
+                    } else {
+                        toast.error(response.msg || 'Failed to delete leads');
+                    }
                     break;
+                    
                 case 'all':
-                    response = await deleteAllLeadsApi();
-                    break;
+                    // Use progress tracking for delete all
+                    setDeleteProgress({
+                        total: 0,
+                        deleted: 0,
+                        percentage: 0,
+                        isProcessing: true,
+                        msg: 'Starting deletion...'
+                    });
+
+                    await deleteAllLeadsApiWithProgress((progressData) => {
+                        if (progressData.type === 'start') {
+                            setDeleteProgress({
+                                total: progressData.total,
+                                deleted: 0,
+                                percentage: 0,
+                                isProcessing: true,
+                                msg: progressData.msg || 'Starting deletion...'
+                            });
+                        } else if (progressData.type === 'progress') {
+                            setDeleteProgress({
+                                total: progressData.total,
+                                deleted: progressData.deleted,
+                                percentage: progressData.percentage,
+                                isProcessing: true,
+                                msg: progressData.msg || `Deleting ${progressData.deleted} of ${progressData.total}...`
+                            });
+                        } else if (progressData.type === 'complete') {
+                            setDeleteProgress({
+                                total: progressData.total,
+                                deleted: progressData.deleted,
+                                percentage: 100,
+                                isProcessing: false,
+                                msg: progressData.msg || 'Deletion complete!'
+                            });
+                            toast.success(progressData.msg || 'All leads deleted successfully');
+                            setTimeout(() => {
+                                fetchLeads(1); // Reset to page 1
+                                setDeleteConfirmOpen(false);
+                                setDeleting(false);
+                            }, 1000);
+                            return; // Exit early to prevent finally block
+                        } else if (progressData.type === 'error') {
+                            toast.error(progressData.message || 'Failed to delete leads');
+                            setDeleteProgress({
+                                ...deleteProgress,
+                                isProcessing: false
+                            });
+                        }
+                    });
+                    return; // Exit early for 'all' type to handle in progress callback
+                    
                 default:
                     return;
             }
 
-            if (response.success) {
-                toast.success(response.msg || 'Leads deleted successfully');
-                fetchLeads(pagination.currentPage);
-            } else {
-                toast.error(response.msg || 'Failed to delete leads');
-            }
         } catch (error) {
             toast.error('Error deleting leads');
             console.error('Delete leads error:', error);
+            setDeleteProgress({
+                ...deleteProgress,
+                isProcessing: false
+            });
         } finally {
-            setDeleting(false);
-            setDeleteConfirmOpen(false);
-            setSelectedLead(null);
-            setDeleteType('');
+            if (deleteType !== 'all') {
+                setDeleting(false);
+                setDeleteConfirmOpen(false);
+                setSelectedLead(null);
+                setDeleteType('');
+            }
         }
     };
 
@@ -2443,30 +2514,76 @@ const LeadsPage = () => {
             {/* Delete Confirmation Dialog */}
             <Dialog 
                 open={deleteConfirmOpen} 
-                onClose={() => setDeleteConfirmOpen(false)}
+                onClose={() => !deleteProgress.isProcessing && setDeleteConfirmOpen(false)}
                 fullWidth
-                maxWidth="xs"
+                maxWidth="sm"
             >
                 <DialogTitle>
-                    Confirm Delete
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <Delete color="error" />
+                        <Typography variant="h6">Confirm Delete</Typography>
+                    </Box>
                 </DialogTitle>
                 <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
-                    <Typography>
-                        {deleteType === 'single' && `Are you sure you want to delete ${selectedLead?.firstName} ${selectedLead?.lastName}?`}
-                        {deleteType === 'bulk' && `Are you sure you want to delete ${selectedLeads.size} selected leads?`}
-                        {deleteType === 'all' && 'Are you sure you want to delete ALL leads? This action cannot be undone.'}
-                    </Typography>
+                    {!deleteProgress.isProcessing ? (
+                        <>
+                            <Typography>
+                                {deleteType === 'single' && `Are you sure you want to delete ${selectedLead?.firstName} ${selectedLead?.lastName}?`}
+                                {deleteType === 'bulk' && `Are you sure you want to delete ${selectedLeads.size} selected leads?`}
+                                {deleteType === 'all' && (
+                                    <>
+                                        <Typography variant="body1" gutterBottom>
+                                            Are you sure you want to delete <strong>ALL {pagination.totalFiltered} leads</strong>?
+                                        </Typography>
+                                        <Typography variant="body2" color="error" sx={{ mt: 2, fontWeight: 'bold' }}>
+                                            ⚠️ This action will move all leads to the recycle bin.
+                                        </Typography>
+                                    </>
+                                )}
+                            </Typography>
+                            {deleteType !== 'all' && (
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                    This will move the lead(s) to the recycle bin.
+                                </Typography>
+                            )}
+                        </>
+                    ) : (
+                        <Box sx={{ width: '100%', py: 2 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    {deleteProgress.msg}
+                                </Typography>
+                                <Typography variant="body2" fontWeight="bold" color="error.main">
+                                    {deleteProgress.percentage}%
+                                </Typography>
+                            </Box>
+                            <LinearProgress 
+                                variant="determinate" 
+                                value={deleteProgress.percentage} 
+                                color="error"
+                                sx={{ height: 8, borderRadius: 4 }}
+                            />
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                Deleted {deleteProgress.deleted.toLocaleString()} of {deleteProgress.total.toLocaleString()} leads
+                            </Typography>
+                        </Box>
+                    )}
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
-                    <Button
-                        variant="contained"
-                        color="error"
-                        onClick={handleDeleteConfirm}
-                        disabled={deleting}
-                    >
-                        {deleting ? <CircularProgress size={24} /> : 'Delete'}
+                    <Button onClick={() => setDeleteConfirmOpen(false)} disabled={deleteProgress.isProcessing}>
+                        {deleteProgress.isProcessing ? 'Processing...' : 'Cancel'}
                     </Button>
+                    {!deleteProgress.isProcessing && (
+                        <Button
+                            variant="contained"
+                            color="error"
+                            onClick={handleDeleteConfirm}
+                            disabled={deleting}
+                            startIcon={deleting ? <CircularProgress size={20} /> : <Delete />}
+                        >
+                            {deleting ? 'Starting...' : 'Delete'}
+                        </Button>
+                    )}
                 </DialogActions>
             </Dialog>
 

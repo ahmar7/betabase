@@ -26,6 +26,7 @@ import {
     DialogContent,
     DialogActions,
     Badge,
+    LinearProgress,
 } from "@mui/material";
 import { DeleteForever, Restore, DeselectOutlined, Menu as MenuIcon, DeleteSweep, RestoreFromTrash, Close } from "@mui/icons-material";
 import { useAuthUser } from "react-auth-kit";
@@ -36,8 +37,8 @@ import {
     bulkHardDeleteLeadsApi,
     restoreLeadApi,
     hardDeleteLeadApi,
-    restoreAllLeadsApi,
-    hardDeleteAllLeadsApi,
+    restoreAllLeadsApiWithProgress,
+    hardDeleteAllLeadsApiWithProgress,
 } from "../../../Api/Service";
 import Sidebar from "./Sidebar.js";
 import { toast } from "react-toastify";
@@ -69,6 +70,20 @@ const RecycleBin = () => {
     const [deletingAll, setDeletingAll] = useState(false);
     const [confirmRestoreAllOpen, setConfirmRestoreAllOpen] = useState(false);
     const [confirmDeleteAllOpen, setConfirmDeleteAllOpen] = useState(false);
+    const [restoreProgress, setRestoreProgress] = useState({
+        total: 0,
+        restored: 0,
+        percentage: 0,
+        isProcessing: false,
+        msg: ''
+    });
+    const [deleteProgress, setDeleteProgress] = useState({
+        total: 0,
+        deleted: 0,
+        percentage: 0,
+        isProcessing: false,
+        msg: ''
+    });
 
     useEffect(() => {
         const handleResize = () => {
@@ -200,12 +215,59 @@ const RecycleBin = () => {
     const restoreAll = async () => {
         try {
             setRestoringAll(true);
-            const res = await restoreAllLeadsApi();
-            toast.success(res?.msg || 'All leads restored from recycle bin');
-            setConfirmRestoreAllOpen(false);
-            fetchDeleted(1);
+            setRestoreProgress({
+                total: 0,
+                restored: 0,
+                percentage: 0,
+                isProcessing: true,
+                msg: 'Starting restore...'
+            });
+
+            await restoreAllLeadsApiWithProgress((progressData) => {
+                if (progressData.type === 'start') {
+                    setRestoreProgress({
+                        total: progressData.total,
+                        restored: 0,
+                        percentage: 0,
+                        isProcessing: true,
+                        msg: progressData.msg || 'Starting restore...'
+                    });
+                } else if (progressData.type === 'progress') {
+                    setRestoreProgress({
+                        total: progressData.total,
+                        restored: progressData.restored,
+                        percentage: progressData.percentage,
+                        isProcessing: true,
+                        msg: progressData.msg || `Restoring ${progressData.restored} of ${progressData.total}...`
+                    });
+                } else if (progressData.type === 'complete') {
+                    setRestoreProgress({
+                        total: progressData.total,
+                        restored: progressData.restored,
+                        percentage: 100,
+                        isProcessing: false,
+                        msg: progressData.msg || 'Restore complete!'
+                    });
+                    toast.success(progressData.msg || 'All leads restored successfully');
+                    setTimeout(() => {
+                        setConfirmRestoreAllOpen(false);
+                        fetchDeleted(1);
+                    }, 1000);
+                } else if (progressData.type === 'error') {
+                    toast.error(progressData.message || 'Failed to restore leads');
+                    setRestoreProgress({
+                        ...restoreProgress,
+                        isProcessing: false
+                    });
+                }
+            });
         } catch (e) {
-            toast.error('Failed to restore all leads');
+            console.error('Restore all error:', e);
+            toast.error(e.message || 'Failed to restore all leads');
+            setRestoreProgress({
+                ...restoreProgress,
+                isProcessing: false
+            });
         } finally {
             setRestoringAll(false);
         }
@@ -214,12 +276,59 @@ const RecycleBin = () => {
     const deleteAll = async () => {
         try {
             setDeletingAll(true);
-            const res = await hardDeleteAllLeadsApi();
-            toast.success(res?.msg || 'All leads permanently deleted from recycle bin');
-            setConfirmDeleteAllOpen(false);
-            fetchDeleted(1);
+            setDeleteProgress({
+                total: 0,
+                deleted: 0,
+                percentage: 0,
+                isProcessing: true,
+                msg: 'Starting deletion...'
+            });
+
+            await hardDeleteAllLeadsApiWithProgress((progressData) => {
+                if (progressData.type === 'start') {
+                    setDeleteProgress({
+                        total: progressData.total,
+                        deleted: 0,
+                        percentage: 0,
+                        isProcessing: true,
+                        msg: progressData.msg || 'Starting deletion...'
+                    });
+                } else if (progressData.type === 'progress') {
+                    setDeleteProgress({
+                        total: progressData.total,
+                        deleted: progressData.deleted,
+                        percentage: progressData.percentage,
+                        isProcessing: true,
+                        msg: progressData.msg || `Deleting ${progressData.deleted} of ${progressData.total}...`
+                    });
+                } else if (progressData.type === 'complete') {
+                    setDeleteProgress({
+                        total: progressData.total,
+                        deleted: progressData.deleted,
+                        percentage: 100,
+                        isProcessing: false,
+                        msg: progressData.msg || 'Deletion complete!'
+                    });
+                    toast.success(progressData.msg || 'All leads permanently deleted');
+                    setTimeout(() => {
+                        setConfirmDeleteAllOpen(false);
+                        fetchDeleted(1);
+                    }, 1000);
+                } else if (progressData.type === 'error') {
+                    toast.error(progressData.message || 'Failed to delete leads');
+                    setDeleteProgress({
+                        ...deleteProgress,
+                        isProcessing: false
+                    });
+                }
+            });
         } catch (e) {
-            toast.error('Failed to permanently delete all leads');
+            console.error('Delete all error:', e);
+            toast.error(e.message || 'Failed to permanently delete all leads');
+            setDeleteProgress({
+                ...deleteProgress,
+                isProcessing: false
+            });
         } finally {
             setDeletingAll(false);
         }
@@ -543,7 +652,7 @@ const RecycleBin = () => {
             {/* Restore All Confirmation Dialog */}
             <Dialog
                 open={confirmRestoreAllOpen}
-                onClose={() => setConfirmRestoreAllOpen(false)}
+                onClose={() => !restoreProgress.isProcessing && setConfirmRestoreAllOpen(false)}
                 maxWidth="sm"
                 fullWidth
             >
@@ -554,33 +663,59 @@ const RecycleBin = () => {
                     </Box>
                 </DialogTitle>
                 <DialogContent>
-                    <Typography variant="body1">
-                        Are you sure you want to restore all <strong>{pagination.totalFiltered} lead(s)</strong> from the recycle bin?
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                        All leads will be restored to the active leads list and will be available again.
-                    </Typography>
+                    {!restoreProgress.isProcessing ? (
+                        <>
+                            <Typography variant="body1">
+                                Are you sure you want to restore all <strong>{pagination.totalFiltered} lead(s)</strong> from the recycle bin?
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                                All leads will be restored to the active leads list and will be available again.
+                            </Typography>
+                        </>
+                    ) : (
+                        <Box sx={{ width: '100%', py: 2 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    {restoreProgress.msg}
+                                </Typography>
+                                <Typography variant="body2" fontWeight="bold" color="success.main">
+                                    {restoreProgress.percentage}%
+                                </Typography>
+                            </Box>
+                            <LinearProgress 
+                                variant="determinate" 
+                                value={restoreProgress.percentage} 
+                                color="success"
+                                sx={{ height: 8, borderRadius: 4 }}
+                            />
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                Restored {restoreProgress.restored.toLocaleString()} of {restoreProgress.total.toLocaleString()} leads
+                            </Typography>
+                        </Box>
+                    )}
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setConfirmRestoreAllOpen(false)} disabled={restoringAll}>
-                        Cancel
+                    <Button onClick={() => setConfirmRestoreAllOpen(false)} disabled={restoreProgress.isProcessing}>
+                        {restoreProgress.isProcessing ? 'Processing...' : 'Cancel'}
                     </Button>
-                    <Button 
-                        variant="contained" 
-                        color="success" 
-                        onClick={restoreAll} 
-                        disabled={restoringAll}
-                        startIcon={restoringAll ? <CircularProgress size={20} /> : <RestoreFromTrash />}
-                    >
-                        {restoringAll ? 'Restoring...' : 'Restore All'}
-                    </Button>
+                    {!restoreProgress.isProcessing && (
+                        <Button 
+                            variant="contained" 
+                            color="success" 
+                            onClick={restoreAll} 
+                            disabled={restoringAll}
+                            startIcon={restoringAll ? <CircularProgress size={20} /> : <RestoreFromTrash />}
+                        >
+                            {restoringAll ? 'Starting...' : 'Restore All'}
+                        </Button>
+                    )}
                 </DialogActions>
             </Dialog>
 
             {/* Delete All Confirmation Dialog */}
             <Dialog
                 open={confirmDeleteAllOpen}
-                onClose={() => setConfirmDeleteAllOpen(false)}
+                onClose={() => !deleteProgress.isProcessing && setConfirmDeleteAllOpen(false)}
                 maxWidth="sm"
                 fullWidth
             >
@@ -591,26 +726,52 @@ const RecycleBin = () => {
                     </Box>
                 </DialogTitle>
                 <DialogContent>
-                    <Typography variant="body1">
-                        Are you sure you want to <strong>permanently delete all {pagination.totalFiltered} lead(s)</strong> from the recycle bin?
-                    </Typography>
-                    <Typography variant="body2" color="error" sx={{ mt: 2, fontWeight: 'bold' }}>
-                        ⚠️ This action cannot be undone! All leads will be permanently removed from the database.
-                    </Typography>
+                    {!deleteProgress.isProcessing ? (
+                        <>
+                            <Typography variant="body1">
+                                Are you sure you want to <strong>permanently delete all {pagination.totalFiltered} lead(s)</strong> from the recycle bin?
+                            </Typography>
+                            <Typography variant="body2" color="error" sx={{ mt: 2, fontWeight: 'bold' }}>
+                                ⚠️ This action cannot be undone! All leads will be permanently removed from the database.
+                            </Typography>
+                        </>
+                    ) : (
+                        <Box sx={{ width: '100%', py: 2 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    {deleteProgress.msg}
+                                </Typography>
+                                <Typography variant="body2" fontWeight="bold" color="error.main">
+                                    {deleteProgress.percentage}%
+                                </Typography>
+                            </Box>
+                            <LinearProgress 
+                                variant="determinate" 
+                                value={deleteProgress.percentage} 
+                                color="error"
+                                sx={{ height: 8, borderRadius: 4 }}
+                            />
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                Deleted {deleteProgress.deleted.toLocaleString()} of {deleteProgress.total.toLocaleString()} leads
+                            </Typography>
+                        </Box>
+                    )}
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setConfirmDeleteAllOpen(false)} disabled={deletingAll}>
-                        Cancel
+                    <Button onClick={() => setConfirmDeleteAllOpen(false)} disabled={deleteProgress.isProcessing}>
+                        {deleteProgress.isProcessing ? 'Processing...' : 'Cancel'}
                     </Button>
-                    <Button 
-                        variant="contained" 
-                        color="error" 
-                        onClick={deleteAll} 
-                        disabled={deletingAll}
-                        startIcon={deletingAll ? <CircularProgress size={20} /> : <DeleteSweep />}
-                    >
-                        {deletingAll ? 'Deleting...' : 'Empty Bin'}
-                    </Button>
+                    {!deleteProgress.isProcessing && (
+                        <Button 
+                            variant="contained" 
+                            color="error" 
+                            onClick={deleteAll} 
+                            disabled={deletingAll}
+                            startIcon={deletingAll ? <CircularProgress size={20} /> : <DeleteSweep />}
+                        >
+                            {deletingAll ? 'Starting...' : 'Empty Bin'}
+                        </Button>
+                    )}
                 </DialogActions>
             </Dialog>
         </Box>
