@@ -238,11 +238,11 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
                 });
                 res.end();
             } else {
-                return res.status(400).json({
-                    success: false,
-                    msg: 'No valid data found in CSV file',
-                    errors
-                });
+            return res.status(400).json({
+                success: false,
+                msg: 'No valid data found in CSV file',
+                errors
+            });
             }
             return;
         }
@@ -255,8 +255,8 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
         });
 
         // Process leads in batches with bulk operations
-        const BATCH_SIZE = 500; // Increased batch size for bulk operations
-        const processedLeads = [];
+        const BATCH_SIZE = 1000; // Increased batch size for better performance
+        let processedCount = 0; // Track count instead of storing documents
         const skippedLeads = [];
         let lastProgressUpdate = 0;
         const PROGRESS_UPDATE_INTERVAL = results.length > 1000 ? 50 : 10; // Less frequent updates for large datasets
@@ -268,7 +268,7 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
             const batchEmails = batch.map(lead => lead.email);
             const existingLeads = await Lead.find({
                 email: { $in: batchEmails },
-                isDeleted: false
+                        isDeleted: false
             }).select('email').lean();
 
             // Create a Set of existing emails for fast lookup
@@ -278,10 +278,10 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
             const leadsToInsert = [];
             for (const leadData of batch) {
                 if (existingEmailsSet.has(leadData.email)) {
-                    skippedLeads.push({
-                        email: leadData.email,
-                        reason: 'Duplicate email'
-                    });
+                        skippedLeads.push({
+                            email: leadData.email,
+                            reason: 'Duplicate email'
+                        });
                 } else {
                     leadsToInsert.push(leadData);
                 }
@@ -290,28 +290,38 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
             // Bulk insert new leads
             if (leadsToInsert.length > 0) {
                 try {
-                    const insertedLeads = await Lead.insertMany(leadsToInsert, { ordered: false });
-                    processedLeads.push(...insertedLeads);
+                    const result = await Lead.insertMany(leadsToInsert, { ordered: false });
+                    processedCount += result.length; // Only count, don't store documents
                 } catch (error) {
                     // Handle any individual errors during bulk insert
                     if (error.writeErrors) {
                         error.writeErrors.forEach(writeError => {
-                            skippedLeads.push({
+                    skippedLeads.push({
                                 email: leadsToInsert[writeError.index]?.email || 'unknown',
                                 reason: writeError.errmsg || 'Insert error'
                             });
                         });
-                    }
+                        // Count successful inserts even if some failed
+                        processedCount += (leadsToInsert.length - error.writeErrors.length);
+                    } else {
+                        // If entire batch failed, add to skipped
+                        leadsToInsert.forEach(lead => {
+                            skippedLeads.push({
+                                email: lead.email,
+                                reason: error.message || 'Insert error'
+                            });
+                    });
                 }
             }
+        }
 
             // Send progress update every N leads
-            const currentProgress = processedLeads.length + skippedLeads.length;
+            const currentProgress = processedCount + skippedLeads.length;
             if (currentProgress - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL || currentProgress === results.length) {
                 sendProgress({
                     type: 'progress',
                     total: results.length,
-                    uploaded: processedLeads.length,
+                    uploaded: processedCount,
                     skipped: skippedLeads.length,
                     percentage: Math.round((currentProgress / results.length) * 100)
                 });
@@ -321,18 +331,14 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
 
         const responseData = {
             success: true,
-            msg: `Successfully processed ${processedLeads.length} leads${skippedLeads.length > 0 ? `, ${skippedLeads.length} skipped` : ''}`,
+            msg: `Successfully processed ${processedCount} leads${skippedLeads.length > 0 ? `, ${skippedLeads.length} skipped` : ''}`,
             data: {
-                processed: processedLeads.length,
+                processed: processedCount,
                 skipped: skippedLeads.length,
                 details: {
-                    processedLeads: processedLeads.map(lead => ({
-                        id: lead._id,
-                        name: `${lead.firstName} ${lead.lastName}`,
-                        email: lead.email
-                    })),
-                    skippedLeads,
-                    errors: errors.length > 0 ? errors : undefined
+                    // Don't return full lead objects to save memory
+                    skippedLeads: skippedLeads.length > 100 ? skippedLeads.slice(0, 100) : skippedLeads, // Limit skipped list
+                    errors: errors.length > 0 ? (errors.length > 100 ? errors.slice(0, 100) : errors) : undefined
                 }
             }
         };

@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "test": "nodemon server.js"
+    "start": "node --max-old-space-size=4096 server.js",
+    "dev": "node --max-old-space-size=4096 server.js",
+    "test": "nodemon --max-old-space-size=4096 server.js"
   },
   "author": "",
   "license": "ISC",

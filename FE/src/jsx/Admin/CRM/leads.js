@@ -466,7 +466,13 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
     };
 
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
+        <Dialog 
+            open={open} 
+            onClose={handleClose} 
+            maxWidth="lg" 
+            fullWidth
+            fullScreen={typeof window !== 'undefined' && window.innerWidth < 600}
+        >
             <DialogTitle>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                     <Typography variant="h6">Create New Lead</Typography>
@@ -476,7 +482,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
                 </Box>
             </DialogTitle>
 
-            <DialogContent>
+            <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
                 <Stepper activeStep={activeStep} orientation="vertical">
                     {/* Step 1: Choose Method */}
                     <Step>
@@ -958,7 +964,13 @@ const LeadDetails = ({ lead, open, onClose }) => {
     if (!lead) return null;
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <Dialog 
+            open={open} 
+            onClose={onClose} 
+            maxWidth="md" 
+            fullWidth
+            fullScreen={typeof window !== 'undefined' && window.innerWidth < 600}
+        >
             <DialogTitle>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                     <Typography variant="h6">Lead Details</Typography>
@@ -967,41 +979,41 @@ const LeadDetails = ({ lead, open, onClose }) => {
                     </IconButton>
                 </Box>
             </DialogTitle>
-            <DialogContent>
+            <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
                 <Grid container spacing={3} sx={{ mt: 1 }}>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">First Name</Typography>
-                        <Typography variant="body1">{lead.firstName}</Typography>
+                        <Typography variant="body1" sx={{ wordBreak: 'break-word' }}>{lead.firstName}</Typography>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Last Name</Typography>
-                        <Typography variant="body1">{lead.lastName}</Typography>
+                        <Typography variant="body1" sx={{ wordBreak: 'break-word' }}>{lead.lastName}</Typography>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Email</Typography>
-                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1, wordBreak: 'break-all', fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                             <Email fontSize="small" />
                             {lead.email}
                         </Typography>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Phone</Typography>
-                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1, wordBreak: 'break-word' }}>
                             <Phone fontSize="small" />
                             {lead.phone || 'Not provided'}
                         </Typography>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Country</Typography>
-                        <Typography variant="body1">{lead.country || 'Not provided'}</Typography>
+                        <Typography variant="body1" sx={{ wordBreak: 'break-word' }}>{lead.country || 'Not provided'}</Typography>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Brand</Typography>
-                        <Typography variant="body1">{lead.Brand || 'Not provided'}</Typography>
+                        <Typography variant="body1" sx={{ wordBreak: 'break-word' }}>{lead.Brand || 'Not provided'}</Typography>
                     </Grid>
                     <Grid item xs={12}>
                         <Typography variant="subtitle2" color="text.secondary">Address</Typography>
-                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1, wordBreak: 'break-word' }}>
                             <LocationOn fontSize="small" />
                             {lead.Address || 'Not provided'}
                         </Typography>
@@ -1019,7 +1031,7 @@ const LeadDetails = ({ lead, open, onClose }) => {
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Created Date</Typography>
-                        <Typography variant="body1">
+                        <Typography variant="body1" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                             {new Date(lead.createdAt).toLocaleDateString('en-US', {
                                 year: 'numeric',
                                 month: 'long',
@@ -1112,7 +1124,13 @@ const EditLeadDialog = ({ lead, open, onClose, onLeadUpdated }) => {
     };
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <Dialog 
+            open={open} 
+            onClose={onClose} 
+            maxWidth="md" 
+            fullWidth
+            fullScreen={typeof window !== 'undefined' && window.innerWidth < 600}
+        >
             <DialogTitle>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                     <Typography variant="h6">Edit Lead</Typography>
@@ -1121,7 +1139,7 @@ const EditLeadDialog = ({ lead, open, onClose, onLeadUpdated }) => {
                     </IconButton>
                 </Box>
             </DialogTitle>
-            <DialogContent>
+            <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
                 <Grid container spacing={2} sx={{ mt: 1 }}>
                     <Grid item xs={12} sm={6}>
                         <TextField
@@ -1241,6 +1259,8 @@ const LeadsPage = () => {
         country: "",
         agent: "",
     });
+    // Temporary search value (not applied until Search button is clicked)
+    const [tempSearch, setTempSearch] = useState("");
     const [pagination, setPagination] = useState({
         currentPage: 1,
         totalPages: 1,
@@ -1590,10 +1610,43 @@ const LeadsPage = () => {
     };
 
     const handleFilterChange = (field, value) => {
+        // For search field, only update temporary search
+        if (field === 'search') {
+            setTempSearch(value);
+            return;
+        }
+        
+        // For other filters, apply immediately
         setFilters((prev) => ({
             ...prev,
             [field]: value,
         }));
+    };
+
+    // Handle search button click
+    const handleSearch = () => {
+        setFilters((prev) => ({
+            ...prev,
+            search: tempSearch,
+        }));
+    };
+
+    // Handle Enter key in search field
+    const handleSearchKeyPress = (e) => {
+        if (e.key === 'Enter') {
+            handleSearch();
+        }
+    };
+
+    // Clear all filters
+    const handleClearFilters = () => {
+        setTempSearch("");
+        setFilters({
+            search: "",
+            status: "",
+            country: "",
+            agent: "",
+        });
     };
 
     const toggleExpandLead = (leadId) => {
@@ -1721,41 +1774,100 @@ const LeadsPage = () => {
                     </Toolbar>
                 </AppBar>
 
-                {/* Main Content Area */}
-                <Box sx={{ flex: 1, overflow: "auto", p: 3 }}>
-                    {/* Bulk Actions Bar */}
-                    {selectedLeads.size > 0 && (
-                        <Card elevation={2} sx={{ mb: 3, borderRadius: 3, bgcolor: 'primary.light' }}>
-                            <CardContent>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Typography variant="body1" fontWeight="bold">
-                                        {selectedLeads.size} lead(s) selected
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                {/* Bulk Actions Bar - Positioned outside scrollable area for true stickiness */}
+                {selectedLeads.size > 0 && (
+                    <Card elevation={4} sx={{ 
+                        borderRadius: 0,
+                        bgcolor: 'primary.main',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 1100, // Higher z-index to stay above everything
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                        borderBottom: '2px solid rgba(255,255,255,0.2)',
+                    }}>
+                            <CardContent sx={{ '&:last-child': { pb: 2 } }}>
+                                <Box sx={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: { xs: 'flex-start', sm: 'center' },
+                                    flexDirection: { xs: 'column', sm: 'row' },
+                                    gap: 2
+                                }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                        <Badge 
+                                            badgeContent={selectedLeads.size} 
+                                            color="error"
+                                            sx={{
+                                                '& .MuiBadge-badge': {
+                                                    fontSize: '0.875rem',
+                                                    height: 24,
+                                                    minWidth: 24,
+                                                    fontWeight: 'bold'
+                                                }
+                                            }}
+                                        >
+                                            <SelectAll sx={{ color: 'white', fontSize: { xs: 28, sm: 32 } }} />
+                                        </Badge>
+                                        <Box>
+                                            <Typography variant="subtitle1" fontWeight="bold" sx={{ color: 'white' }}>
+                                                {selectedLeads.size} Lead{selectedLeads.size > 1 ? 's' : ''} Selected
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.9)', display: { xs: 'none', sm: 'block' } }}>
+                                                Choose an action below
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                    <Box sx={{ 
+                                        display: 'flex', 
+                                        gap: 1,
+                                        flexWrap: 'wrap',
+                                        width: { xs: '100%', sm: 'auto' }
+                                    }}>
                                     {((authUser().user.role === 'superadmin') || (authUser().user.role === 'admin' && (currentUserLatest?.adminPermissions?.canManageCrmLeads))) && (
                                         <Button
                                             variant="contained"
-                                            color="primary"
-                                            startIcon={<People />}
+                                            color="success"
+                                            startIcon={<People sx={{ display: { xs: 'none', sm: 'block' } }} />}
                                             onClick={() => setAssignDialogOpen(true)}
+                                            size="small"
+                                            sx={{ 
+                                                flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                                fontWeight: 'bold',
+                                            }}
                                         >
                                             Assign
                                         </Button>
                                     )}
                                         <Button
                                             variant="outlined"
-                                            startIcon={<DeselectOutlined />}
+                                            startIcon={<Close sx={{ display: { xs: 'none', sm: 'block' } }} />}
                                             onClick={() => setSelectedLeads(new Set())}
+                                            size="small"
+                                            sx={{ 
+                                                flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                                color: 'white',
+                                                borderColor: 'rgba(255,255,255,0.5)',
+                                                fontWeight: 'bold',
+                                                '&:hover': {
+                                                    borderColor: 'white',
+                                                    bgcolor: 'rgba(255,255,255,0.1)'
+                                                }
+                                            }}
                                         >
-                                            Deselect All
+                                            Clear
                                         </Button>
                                         <Button
                                             variant="contained"
                                             color="error"
                                             startIcon={<DeleteSweep />}
                                             onClick={() => handleDeleteClick('bulk')}
+                                            size="small"
+                                            sx={{ 
+                                                flex: { xs: '1 1 100%', sm: '0 0 auto' },
+                                                fontWeight: 'bold',
+                                            }}
                                         >
-                                            Delete Selected ({selectedLeads.size})
+                                            Delete ({selectedLeads.size})
                                         </Button>
                                     </Box>
                                 </Box>
@@ -1763,23 +1875,41 @@ const LeadsPage = () => {
                         </Card>
                     )}
 
+                {/* Main Content Area */}
+                <Box sx={{ flex: 1, overflow: "auto", p: { xs: 2, sm: 3 } }}>
                     {/* Action Bar */}
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+                    <Box sx={{ 
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        alignItems: { xs: "flex-start", md: "center" },
+                        flexDirection: { xs: "column", md: "row" },
+                        gap: 2,
+                        mb: 3 
+                    }}>
                         <Box>
                             <Typography variant="h6" fontWeight="bold" gutterBottom>
                                 All Leads
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
                                 Manage your leads and track conversions
                             </Typography>
                         </Box>
-                        <Box sx={{ display: "flex", gap: 2 }}>
+                        <Box sx={{ 
+                            display: "flex", 
+                            gap: 1,
+                            flexWrap: "wrap",
+                            width: { xs: '100%', md: 'auto' }
+                        }}>
                             <Button
                                 variant="outlined"
-                                startIcon={<Download />}
+                                startIcon={<Download sx={{ display: { xs: 'none', sm: 'block' } }} />}
                                 onClick={handleExportLeads}
                                 disabled={loading}
-                                sx={{ borderRadius: 2 }}
+                                size="small"
+                                sx={{ 
+                                    borderRadius: 2,
+                                    flex: { xs: '1 1 auto', sm: '0 0 auto' }
+                                }}
                             >
                                 Export
                             </Button>
@@ -1787,8 +1917,12 @@ const LeadsPage = () => {
                                 <Button
                                     variant="outlined"
                                     color="error"
-                                    startIcon={<Delete />}
-                                    sx={{ borderRadius: 2 }}
+                                    startIcon={<Delete sx={{ display: { xs: 'none', sm: 'block' } }} />}
+                                    size="small"
+                                    sx={{ 
+                                        borderRadius: 2,
+                                        flex: { xs: '1 1 auto', sm: '0 0 auto' }
+                                    }}
                                     onClick={() => handleDeleteClick('all')}
                                 >
                                     Delete All
@@ -1797,7 +1931,11 @@ const LeadsPage = () => {
                             <Button
                                 variant="contained"
                                 startIcon={<Add />}
-                                sx={{ borderRadius: 2 }}
+                                size="small"
+                                sx={{ 
+                                    borderRadius: 2,
+                                    flex: { xs: '1 1 100%', sm: '0 0 auto' }
+                                }}
                                 onClick={() => setCreateDialogOpen(true)}
                             >
                                 Create Lead
@@ -1820,8 +1958,9 @@ const LeadsPage = () => {
                                         fullWidth
                                         size="small"
                                         placeholder="Search leads..."
-                                        value={filters.search}
+                                        value={tempSearch}
                                         onChange={(e) => handleFilterChange("search", e.target.value)}
+                                        onKeyPress={handleSearchKeyPress}
                                         InputProps={{
                                             startAdornment: (
                                                 <InputAdornment position="start">
@@ -1882,20 +2021,54 @@ const LeadsPage = () => {
                                         </Select>
                                     </FormControl>
                                 </Grid> : ""}
+                                {/* Action Buttons Row */}
+                                <Grid item xs={12}>
+                                    <Box sx={{ 
+                                        display: "flex", 
+                                        gap: 1, 
+                                        justifyContent: "flex-start",
+                                        flexWrap: "wrap"
+                                    }}>
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<Search />}
+                                            onClick={handleSearch}
+                                            size="small"
+                                            sx={{ 
+                                                borderRadius: 2,
+                                                minWidth: 120
+                                            }}
+                                        >
+                                            Search
+                                        </Button>
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<Close />}
+                                            onClick={handleClearFilters}
+                                            size="small"
+                                            sx={{ 
+                                                borderRadius: 2,
+                                                minWidth: 120
+                                            }}
+                                        >
+                                            Clear Filters
+                                        </Button>
+                                    </Box>
+                                </Grid>
                             </Grid>
                         </CardContent>
                     </Card>
 
                     {/* Leads Table */}
-                    <Card elevation={2} sx={{ borderRadius: 3 }}>
-                        <TableContainer>
+                    <Card elevation={2} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+                        <TableContainer sx={{ overflowX: 'auto' }}>
                             {loading ? (
                                 <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: 400 }}>
                                     <CircularProgress />
                                 </Box>
                             ) : (
                                 <>
-                                    <Table>
+                                    <Table sx={{ minWidth: { xs: 800, md: 'auto' } }}>
                                         <TableHead>
                                             <TableRow>
                                                 <TableCell padding="checkbox">
@@ -1906,28 +2079,28 @@ const LeadsPage = () => {
                                                     />
                                                 </TableCell>
                                                 <TableCell />
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 200 }}>
                                                     Contact
                                                 </TableCell>
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 130 }}>
                                                     Phone
                                                 </TableCell>
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 120 }}>
                                                     Country
                                                 </TableCell>
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 120 }}>
                                                     Brand
                                                 </TableCell>
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 150 }}>
                                                     Agent
                                                 </TableCell>
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 120 }}>
                                                     Status
                                                 </TableCell>
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 120 }}>
                                                     Created
                                                 </TableCell>
-                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary" }}>
+                                                <TableCell sx={{ fontWeight: "bold", color: "text.secondary", minWidth: 90 }}>
                                                     Actions
                                                 </TableCell>
                                             </TableRow>
@@ -2023,32 +2196,42 @@ const LeadsPage = () => {
                                                                             <Typography variant="body2">{lead.Address || 'Not provided'}</Typography>
                                                                         </Grid>
                                                                         <Grid item xs={12}>
-                                                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                            <Box sx={{ 
+                                                                                display: 'flex', 
+                                                                                gap: 1,
+                                                                                flexWrap: 'wrap'
+                                                                            }}>
                                                                                 <Button
                                                                                     size="small"
+                                                                                    variant="outlined"
                                                                                     startIcon={<Visibility />}
                                                                                     onClick={() => {
                                                                                         setSelectedLead(lead);
                                                                                         setViewDetailsOpen(true);
                                                                                     }}
+                                                                                    sx={{ flex: { xs: '1 1 100%', sm: '0 0 auto' } }}
                                                                                 >
-                                                                                    View Details
+                                                                                    View
                                                                                 </Button>
                                                                                 <Button
                                                                                     size="small"
+                                                                                    variant="outlined"
                                                                                     startIcon={<Edit />}
                                                                                     onClick={() => {
                                                                                         setSelectedLead(lead);
                                                                                         setEditDialogOpen(true);
                                                                                     }}
+                                                                                    sx={{ flex: { xs: '1 1 48%', sm: '0 0 auto' } }}
                                                                                 >
                                                                                     Edit
                                                                                 </Button>
                                                                                 <Button
                                                                                     size="small"
+                                                                                    variant="outlined"
                                                                                     color="error"
                                                                                     startIcon={<Delete />}
                                                                                     onClick={() => handleDeleteClick('single', lead)}
+                                                                                    sx={{ flex: { xs: '1 1 48%', sm: '0 0 auto' } }}
                                                                                 >
                                                                                     Delete
                                                                                 </Button>
@@ -2086,18 +2269,29 @@ const LeadsPage = () => {
 
                                     {/* Enhanced Pagination */}
                                     {leads.length > 0 && (
-                                        <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                                        <Box sx={{ p: { xs: 1, sm: 2 }, borderTop: 1, borderColor: 'divider' }}>
+                                            <Box sx={{ 
+                                                display: 'flex', 
+                                                justifyContent: 'space-between', 
+                                                alignItems: 'center', 
+                                                flexWrap: 'wrap', 
+                                                gap: 2 
+                                            }}>
                                                 {/* Page Size Selector */}
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        Rows per page:
+                                                <Box sx={{ 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    gap: 1,
+                                                    order: { xs: 2, md: 1 }
+                                                }}>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+                                                        Rows:
                                                     </Typography>
                                                     <Select
                                                         size="small"
                                                         value={pagination.limit}
                                                         onChange={handleLimitChange}
-                                                        sx={{ minWidth: 80 }}
+                                                        sx={{ minWidth: 70 }}
                                                     >
                                                         <MenuItem value={50}>50</MenuItem>
                                                         <MenuItem value={100}>100</MenuItem>
@@ -2107,24 +2301,49 @@ const LeadsPage = () => {
                                                 </Box>
 
                                                 {/* Pagination Info */}
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Showing {((pagination.currentPage - 1) * pagination.limit) + 1} to{' '}
+                                                <Typography 
+                                                    variant="body2" 
+                                                    color="text.secondary"
+                                                    sx={{ 
+                                                        order: { xs: 3, md: 2 },
+                                                        width: { xs: '100%', md: 'auto' },
+                                                        textAlign: { xs: 'center', md: 'left' },
+                                                        fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                                                    }}
+                                                >
+                                                    {((pagination.currentPage - 1) * pagination.limit) + 1}-
                                                     {Math.min(pagination.currentPage * pagination.limit, pagination.totalFiltered)} of{' '}
-                                                    {pagination.totalFiltered} results
+                                                    {pagination.totalFiltered}
                                                     {pagination.totalFiltered !== pagination.totalLeads && (
-                                                        <span> (filtered from {pagination.totalLeads} total)</span>
+                                                        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
+                                                            {' '}(filtered from {pagination.totalLeads})
+                                                        </Box>
                                                     )}
                                                 </Typography>
 
                                                 {/* Pagination Controls */}
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Box sx={{ 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    gap: 0.5,
+                                                    order: { xs: 1, md: 3 }
+                                                }}>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={handlePrevPage}
+                                                        disabled={!pagination.hasPrevPage}
+                                                        sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                                                    >
+                                                        <NavigateBefore />
+                                                    </IconButton>
                                                     <Button
                                                         size="small"
                                                         onClick={handlePrevPage}
                                                         disabled={!pagination.hasPrevPage}
                                                         startIcon={<NavigateBefore />}
+                                                        sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
                                                     >
-                                                        Previous
+                                                        Prev
                                                     </Button>
 
                                                     <Pagination
@@ -2133,8 +2352,15 @@ const LeadsPage = () => {
                                                         onChange={handlePageChange}
                                                         color="primary"
                                                         size="small"
-                                                        showFirstButton
-                                                        showLastButton
+                                                        showFirstButton={false}
+                                                        showLastButton={false}
+                                                        siblingCount={0}
+                                                        boundaryCount={1}
+                                                        sx={{
+                                                            '& .MuiPagination-ul': {
+                                                                flexWrap: 'nowrap'
+                                                            }
+                                                        }}
                                                     />
 
                                                     <Button
@@ -2142,9 +2368,18 @@ const LeadsPage = () => {
                                                         onClick={handleNextPage}
                                                         disabled={!pagination.hasNextPage}
                                                         endIcon={<NavigateNext />}
+                                                        sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
                                                     >
                                                         Next
                                                     </Button>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={handleNextPage}
+                                                        disabled={!pagination.hasNextPage}
+                                                        sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                                                    >
+                                                        <NavigateNext />
+                                                    </IconButton>
                                                 </Box>
                                             </Box>
                                         </Box>
@@ -2206,11 +2441,16 @@ const LeadsPage = () => {
             />
 
             {/* Delete Confirmation Dialog */}
-            <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
+            <Dialog 
+                open={deleteConfirmOpen} 
+                onClose={() => setDeleteConfirmOpen(false)}
+                fullWidth
+                maxWidth="xs"
+            >
                 <DialogTitle>
                     Confirm Delete
                 </DialogTitle>
-                <DialogContent>
+                <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
                     <Typography>
                         {deleteType === 'single' && `Are you sure you want to delete ${selectedLead?.firstName} ${selectedLead?.lastName}?`}
                         {deleteType === 'bulk' && `Are you sure you want to delete ${selectedLeads.size} selected leads?`}
@@ -2231,9 +2471,14 @@ const LeadsPage = () => {
             </Dialog>
 
             {/* Assign Leads Dialog */}
-            <Dialog open={assignDialogOpen} onClose={() => setAssignDialogOpen(false)}>
+            <Dialog 
+                open={assignDialogOpen} 
+                onClose={() => setAssignDialogOpen(false)}
+                fullWidth
+                maxWidth="sm"
+            >
                 <DialogTitle>Assign Selected Leads</DialogTitle>
-                <DialogContent>
+                <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
                     <Typography sx={{ mb: 2 }}>Select an agent to assign {selectedLeads.size} lead(s):</Typography>
                     <FormControl fullWidth size="small">
                         <InputLabel>Agent</InputLabel>
@@ -2266,17 +2511,21 @@ const LeadsPage = () => {
                                 const res = await assignLeadsApi(Array.from(selectedLeads), selectedAgentId);
                                 if (res.success) {
                                     toast.success(res.msg || 'Leads assigned successfully');
-                                    setAssignDialogOpen(false);
+                                    // Fetch leads first before closing modal
+                                    await fetchLeads(pagination.currentPage);
+                                    // Reset state before closing
                                     setSelectedAgentId("");
                                     setSelectedLeads(new Set());
-                                    fetchLeads(pagination.currentPage);
+                                    setAssigning(false);
+                                    // Close modal last
+                                    setAssignDialogOpen(false);
                                 } else {
                                     toast.error(res.msg || 'Failed to assign leads');
+                                    setAssigning(false);
                                 }
                             } catch (err) {
                                 console.error('Assign error:', err);
                                 toast.error('Error assigning leads');
-                            } finally {
                                 setAssigning(false);
                             }
                         }}
