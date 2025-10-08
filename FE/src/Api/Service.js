@@ -5,7 +5,8 @@ import {
   putApi,
   patchApi,
   postFormApi,
-  patchFormApi,getBlobApi
+  patchFormApi,getBlobApi,
+  postFormStreamApi
 } from "./axiosService";
 
 export const registerApi = (data) => {
@@ -261,6 +262,9 @@ export const createLeadApi = (leadData) => {
 };
 export const uploadLeadsCsvApi = (formData) => {
   return postFormApi(`/crm/uploadLeads`, formData);
+};
+export const uploadLeadsCsvStreamApi = (formData, onProgress) => {
+  return postFormStreamApi(`crm/uploadLeads`, formData, onProgress);
 };
 export const deleteLeadApi = (leadId) => {
   return deleteApi(`/crm/deleteLead/${leadId}`);

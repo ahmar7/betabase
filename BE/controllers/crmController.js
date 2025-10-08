@@ -128,6 +128,7 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
         const fieldMapping = JSON.parse(req.body.fieldMapping || '{}');
         const selectedFields = JSON.parse(req.body.selectedFields || '{}');
         const incomingAgentId = req.body.agentId;
+        const enableProgress = req.body.enableProgress === 'true'; // Check if progress tracking is enabled
 
         // Resolve assignment agent once per upload
         if (req.user && req.user.role === 'admin') {
@@ -157,6 +158,21 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
         const errors = [];
         const bufferStream = new stream.PassThrough();
         bufferStream.end(req.file.buffer);
+        
+        // If progress tracking enabled, set up SSE
+        if (enableProgress) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders();
+        }
+
+        const sendProgress = (data) => {
+            if (enableProgress) {
+                res.write(`data: ${JSON.stringify(data)}\n\n`);
+            }
+        };
+
         await new Promise((resolve, reject) => {
             bufferStream
                 .pipe(csv())
@@ -214,49 +230,96 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
         });
 
         if (results.length === 0) {
-            return res.status(400).json({
-                success: false,
-                msg: 'No valid data found in CSV file',
-                errors
-            });
+            if (enableProgress) {
+                sendProgress({
+                    type: 'error',
+                    message: 'No valid data found in CSV file',
+                    errors
+                });
+                res.end();
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    msg: 'No valid data found in CSV file',
+                    errors
+                });
+            }
+            return;
         }
 
-        // Process leads in batches
-        const BATCH_SIZE = 50;
+        // Send initial progress
+        sendProgress({
+            type: 'start',
+            total: results.length,
+            percentage: 0
+        });
+
+        // Process leads in batches with bulk operations
+        const BATCH_SIZE = 500; // Increased batch size for bulk operations
         const processedLeads = [];
         const skippedLeads = [];
+        let lastProgressUpdate = 0;
+        const PROGRESS_UPDATE_INTERVAL = results.length > 1000 ? 50 : 10; // Less frequent updates for large datasets
 
         for (let i = 0; i < results.length; i += BATCH_SIZE) {
             const batch = results.slice(i, i + BATCH_SIZE);
 
-            for (const leadData of batch) {
-                try {
-                    // Check for duplicate email
-                    const existingLead = await Lead.findOne({
-                        email: leadData.email,
-                        isDeleted: false
-                    });
-                    if (existingLead) {
-                        skippedLeads.push({
-                            email: leadData.email,
-                            reason: 'Duplicate email'
-                        });
-                        continue;
-                    }
+            // Bulk duplicate check: Get all emails in this batch
+            const batchEmails = batch.map(lead => lead.email);
+            const existingLeads = await Lead.find({
+                email: { $in: batchEmails },
+                isDeleted: false
+            }).select('email').lean();
 
-                    const newLead = new Lead(leadData);
-                    await newLead.save();
-                    processedLeads.push(newLead);
-                } catch (error) {
+            // Create a Set of existing emails for fast lookup
+            const existingEmailsSet = new Set(existingLeads.map(lead => lead.email));
+
+            // Separate leads into new and duplicate
+            const leadsToInsert = [];
+            for (const leadData of batch) {
+                if (existingEmailsSet.has(leadData.email)) {
                     skippedLeads.push({
                         email: leadData.email,
-                        reason: error.message
+                        reason: 'Duplicate email'
                     });
+                } else {
+                    leadsToInsert.push(leadData);
                 }
+            }
+
+            // Bulk insert new leads
+            if (leadsToInsert.length > 0) {
+                try {
+                    const insertedLeads = await Lead.insertMany(leadsToInsert, { ordered: false });
+                    processedLeads.push(...insertedLeads);
+                } catch (error) {
+                    // Handle any individual errors during bulk insert
+                    if (error.writeErrors) {
+                        error.writeErrors.forEach(writeError => {
+                            skippedLeads.push({
+                                email: leadsToInsert[writeError.index]?.email || 'unknown',
+                                reason: writeError.errmsg || 'Insert error'
+                            });
+                        });
+                    }
+                }
+            }
+
+            // Send progress update every N leads
+            const currentProgress = processedLeads.length + skippedLeads.length;
+            if (currentProgress - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL || currentProgress === results.length) {
+                sendProgress({
+                    type: 'progress',
+                    total: results.length,
+                    uploaded: processedLeads.length,
+                    skipped: skippedLeads.length,
+                    percentage: Math.round((currentProgress / results.length) * 100)
+                });
+                lastProgressUpdate = currentProgress;
             }
         }
 
-        res.json({
+        const responseData = {
             success: true,
             msg: `Successfully processed ${processedLeads.length} leads${skippedLeads.length > 0 ? `, ${skippedLeads.length} skipped` : ''}`,
             data: {
@@ -272,7 +335,18 @@ exports.uploadCSV = catchAsyncErrors(async (req, res, next) => {
                     errors: errors.length > 0 ? errors : undefined
                 }
             }
-        });
+        };
+
+        if (enableProgress) {
+            // Send completion
+            sendProgress({
+                type: 'complete',
+                ...responseData
+            });
+            res.end();
+        } else {
+            res.json(responseData);
+        }
 
     } catch (err) {
         console.error(err);

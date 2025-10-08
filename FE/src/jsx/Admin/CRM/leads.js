@@ -49,6 +49,7 @@ import {
     ListItem,
     ListItemText,
     Divider,
+    LinearProgress,
 } from "@mui/material";
 import {
     Add,
@@ -78,12 +79,15 @@ import {
     DeleteSweep,
     SelectAll,
     DeselectOutlined,
-    Menu as MenuIcon
+    Menu as MenuIcon,
+    CheckCircle,
+    Upload as UploadIcon
 } from "@mui/icons-material";
 import {
     adminCrmLeadsApi,
     createLeadApi,
     uploadLeadsCsvApi,
+    uploadLeadsCsvStreamApi,
     deleteLeadApi,
     deleteLeadsBulkApi,
     deleteAllLeadsApi,
@@ -136,6 +140,14 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
     const [creating, setCreating] = useState(false);
     const [mappingComplete, setMappingComplete] = useState(false);
     const [selectedAgentId, setSelectedAgentId] = useState("");
+    const [uploadProgress, setUploadProgress] = useState({
+        total: 0,
+        uploaded: 0,
+        skipped: 0,
+        remaining: 0,
+        percentage: 0,
+        isUploading: false
+    });
 
     useEffect(() => {
         // Default assigned agent to the creator when dialog opens
@@ -298,26 +310,101 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
 
         try {
             setUploading(true);
+            
+            // Initialize progress
+            setUploadProgress({
+                total: 0,
+                uploaded: 0,
+                skipped: 0,
+                remaining: 0,
+                percentage: 0,
+                isUploading: true
+            });
+
             const formData = new FormData();
             formData.append('file', csvFile);
             formData.append('fieldMapping', JSON.stringify(fieldMapping));
             formData.append('selectedFields', JSON.stringify(selectedFields));
+            formData.append('enableProgress', 'true'); // Enable SSE progress
             if (currentUser?.user?.role === 'superadmin' && selectedAgentId) {
                 formData.append('agentId', selectedAgentId);
             }
 
-            const response = await uploadLeadsCsvApi(formData);
-            if (response.success) {
-                toast.success(`Successfully processed ${response.data.processed} leads! ${response.data.skipped > 0 ? `${response.data.skipped} leads skipped.` : ''}`);
-                onLeadCreated();
-                onClose();
-                resetForm();
-            } else {
-                toast.error(response.msg || 'Failed to upload leads');
-            }
+            // Use the streaming API with progress callback
+            await uploadLeadsCsvStreamApi(formData, (eventData) => {
+                if (eventData.type === 'start') {
+                    setUploadProgress({
+                        total: eventData.total,
+                        uploaded: 0,
+                        skipped: 0,
+                        remaining: eventData.total,
+                        percentage: 0,
+                        isUploading: true
+                    });
+                } else if (eventData.type === 'progress') {
+                    const total = eventData.total || 0;
+                    const uploaded = eventData.uploaded || 0;
+                    const skipped = eventData.skipped || 0;
+                    const remaining = Math.max(0, total - uploaded - skipped);
+                    setUploadProgress({
+                        total: total,
+                        uploaded: uploaded,
+                        skipped: skipped,
+                        remaining: remaining,
+                        percentage: eventData.percentage || 0,
+                        isUploading: true
+                    });
+                } else if (eventData.type === 'complete') {
+                    setUploadProgress({
+                        total: eventData.data.processed + eventData.data.skipped,
+                        uploaded: eventData.data.processed,
+                        skipped: eventData.data.skipped,
+                        remaining: 0,
+                        percentage: 100,
+                        isUploading: false
+                    });
+                    
+                    toast.success(eventData.msg);
+                    
+                    // Show warning if leads were skipped
+                    if (eventData.data.skipped > 0) {
+                        setTimeout(() => {
+                            toast.warning(`${eventData.data.skipped} lead(s) skipped due to duplicate emails`, {
+                                autoClose: 5000
+                            });
+                        }, 500);
+                    }
+                    
+                    // Wait a bit to show 100% completion
+                    setTimeout(() => {
+                        onLeadCreated();
+                        onClose();
+                        resetForm();
+                    }, 1500);
+                } else if (eventData.type === 'error') {
+                    toast.error(eventData.message || 'Upload failed');
+                    setUploadProgress({
+                        total: 0,
+                        uploaded: 0,
+                        skipped: 0,
+                        remaining: 0,
+                        percentage: 0,
+                        isUploading: false
+                    });
+                }
+            });
+
         } catch (error) {
             toast.error('Error uploading leads');
             console.error('Upload leads error:', error);
+            setUploadProgress({
+                total: 0,
+                uploaded: 0,
+                skipped: 0,
+                remaining: 0,
+                percentage: 0,
+                isUploading: false
+            });
         } finally {
             setUploading(false);
         }
@@ -342,6 +429,14 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
         setActiveStep(0);
         setTabValue(0);
         setSelectedAgentId("");
+        setUploadProgress({
+            total: 0,
+            uploaded: 0,
+            skipped: 0,
+            remaining: 0,
+            percentage: 0,
+            isUploading: false
+        });
 
         // Reset selected fields to defaults
         const initialSelectedFields = {};
@@ -390,7 +485,7 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
                             <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 2 }}>
                                 <Tab label="Manual Entry" />
                                 {allowCsvUpload && (
-                                    <Tab label="CSV Upload" />
+                                <Tab label="CSV Upload" />
                                 )}
                             </Tabs>
 
@@ -692,34 +787,139 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
                                 </Box>
                             ) : (
                                 <Box>
-                                    <Typography variant="h6" gutterBottom>Ready to Upload</Typography>
-                                    <Typography variant="body2" gutterBottom>
-                                        You are about to upload <strong>{csvFile?.name}</strong> with the following mapping:
-                                    </Typography>
-
-                                    <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-                                        {AVAILABLE_FIELDS.filter(field => selectedFields[field.key] && fieldMapping[field.key]).map(field => (
-                                            <Typography key={field.key} variant="body2" sx={{ mb: 1 }}>
-                                                <strong>{field.label}:</strong> {fieldMapping[field.key]}
+                                    {!uploadProgress.isUploading && uploadProgress.percentage === 0 ? (
+                                        <>
+                                            <Typography variant="h6" gutterBottom>Ready to Upload</Typography>
+                                            <Typography variant="body2" gutterBottom>
+                                                You are about to upload <strong>{csvFile?.name}</strong> with the following mapping:
                                             </Typography>
-                                        ))}
-                                    </Box>
 
-                                    <Alert severity="warning" sx={{ mt: 2 }}>
-                                        This will import {csvPreview.length > 0 ? 'multiple' : 'all'} leads from the CSV file. Duplicate emails will be skipped automatically.
-                                    </Alert>
+                                            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                                {AVAILABLE_FIELDS.filter(field => selectedFields[field.key] && fieldMapping[field.key]).map(field => (
+                                                    <Typography key={field.key} variant="body2" sx={{ mb: 1 }}>
+                                                        <strong>{field.label}:</strong> {fieldMapping[field.key]}
+                                                    </Typography>
+                                                ))}
+                                            </Box>
+
+                                            <Alert severity="warning" sx={{ mt: 2 }}>
+                                                This will import {csvPreview.length > 0 ? 'multiple' : 'all'} leads from the CSV file. Duplicate emails will be skipped automatically.
+                                            </Alert>
+                                        </>
+                                    ) : (
+                                        <Box>
+                                            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <UploadIcon color="primary" />
+                                                Uploading Leads...
+                                            </Typography>
+                                            
+                                            <Box sx={{ mt: 3, mb: 3 }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Progress
+                                                    </Typography>
+                                                    <Typography variant="body2" fontWeight="bold" color="primary">
+                                                        {uploadProgress.percentage}%
+                                                    </Typography>
+                                                </Box>
+                                                <LinearProgress 
+                                                    variant="determinate" 
+                                                    value={uploadProgress.percentage} 
+                                                    sx={{ 
+                                                        height: 10, 
+                                                        borderRadius: 5,
+                                                        bgcolor: 'grey.200',
+                                                        '& .MuiLinearProgress-bar': {
+                                                            borderRadius: 5,
+                                                        }
+                                                    }}
+                                                />
+                                            </Box>
+
+                                            <Grid container spacing={2} sx={{ mt: 2 }}>
+                                                <Grid item xs={12} sm={3}>
+                                                    <Card variant="outlined" sx={{ bgcolor: 'success.light', borderColor: 'success.main' }}>
+                                                        <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                                                            <CheckCircle color="success" sx={{ fontSize: 32, mb: 1 }} />
+                                                            <Typography variant="h5" fontWeight="bold">
+                                                                {uploadProgress.uploaded}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                Uploaded
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} sm={3}>
+                                                    <Card variant="outlined" sx={{ bgcolor: 'warning.light', borderColor: 'warning.main' }}>
+                                                        <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                                                            <CircularProgress size={32} sx={{ mb: 1 }} />
+                                                            <Typography variant="h5" fontWeight="bold">
+                                                                {uploadProgress.remaining}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                Remaining
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} sm={3}>
+                                                    <Card variant="outlined" sx={{ bgcolor: 'error.light', borderColor: 'error.main' }}>
+                                                        <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                                                            <Close color="error" sx={{ fontSize: 32, mb: 1 }} />
+                                                            <Typography variant="h5" fontWeight="bold">
+                                                                {uploadProgress.skipped}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                Skipped (Duplicates)
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                                <Grid item xs={12} sm={3}>
+                                                    <Card variant="outlined" sx={{ bgcolor: 'info.light', borderColor: 'info.main' }}>
+                                                        <CardContent sx={{ textAlign: 'center', py: 2 }}>
+                                                            <Description color="info" sx={{ fontSize: 32, mb: 1 }} />
+                                                            <Typography variant="h5" fontWeight="bold">
+                                                                {uploadProgress.total}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                Total Leads
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </Card>
+                                                </Grid>
+                                            </Grid>
+
+                                            {uploadProgress.skipped > 0 && (
+                                                <Alert severity="warning" sx={{ mt: 2 }}>
+                                                    <strong>{uploadProgress.skipped} lead(s) skipped</strong> due to duplicate email addresses. These leads already exist in the system.
+                                                </Alert>
+                                            )}
+
+                                            {uploadProgress.percentage === 100 && (
+                                                <Alert severity="success" sx={{ mt: 2 }}>
+                                                    Upload completed successfully! {uploadProgress.uploaded} lead(s) added{uploadProgress.skipped > 0 ? `, ${uploadProgress.skipped} skipped` : ''}. The dialog will close automatically.
+                                                </Alert>
+                                            )}
+                                        </Box>
+                                    )}
                                 </Box>
                             )}
                             <Box sx={{ mt: 2 }}>
-                                <Button onClick={handleBack} sx={{ mr: 1 }}>
+                                <Button 
+                                    onClick={handleBack} 
+                                    sx={{ mr: 1 }}
+                                    disabled={uploadProgress.isUploading}
+                                >
                                     Back
                                 </Button>
                                 <Button
                                     variant="contained"
                                     onClick={tabValue === 0 ? handleManualSubmit : handleCsvUpload}
-                                    disabled={creating || uploading}
+                                    disabled={creating || uploading || uploadProgress.isUploading}
                                 >
-                                    {creating || uploading ? <CircularProgress size={24} /> : 'Submit'}
+                                    {creating || uploading || uploadProgress.isUploading ? <CircularProgress size={24} /> : 'Submit'}
                                 </Button>
                             </Box>
                         </StepContent>
@@ -1091,7 +1291,7 @@ const LeadsPage = () => {
         const handleResize = () => {
             if (window.innerWidth < 768) {
                 setIsSidebarCollapsed(false); // collapse on mobile
-            }  
+            }
         };
 
         // Run once on mount
@@ -1200,7 +1400,7 @@ const LeadsPage = () => {
 
             const res = await adminCrmLeadsApi({ params });
 
-            if (res.success) { 
+            if (res.success) {
                 setLeads(res.data.leads || []);
                 setPagination(res.data.pagination || {
                     currentPage: 1,
@@ -1525,7 +1725,7 @@ const LeadsPage = () => {
                 <Box sx={{ flex: 1, overflow: "auto", p: 3 }}>
                     {/* Bulk Actions Bar */}
                     {selectedLeads.size > 0 && (
-                    <Card elevation={2} sx={{ mb: 3, borderRadius: 3, bgcolor: 'primary.light' }}>
+                        <Card elevation={2} sx={{ mb: 3, borderRadius: 3, bgcolor: 'primary.light' }}>
                             <CardContent>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <Typography variant="body1" fontWeight="bold">

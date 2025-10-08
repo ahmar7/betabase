@@ -34,6 +34,12 @@ leadSchema.pre("save", function (next) {
   next();
 });
 
+// Create indexes for better performance
+leadSchema.index({ email: 1, isDeleted: 1 }); // Compound index for duplicate checks
+leadSchema.index({ agent: 1, isDeleted: 1 }); // For filtering by agent
+leadSchema.index({ status: 1 }); // For filtering by status
+leadSchema.index({ createdAt: -1 }); // For sorting by date
+
 module.exports = async () => {
   const crmDB = await connectCRMDatabase();
   return crmDB.model("Lead", leadSchema);
