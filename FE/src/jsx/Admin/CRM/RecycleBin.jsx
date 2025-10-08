@@ -21,8 +21,13 @@ import {
     IconButton,
     Checkbox,
     TextField,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Badge,
 } from "@mui/material";
-import { DeleteForever, Restore, DeselectOutlined, Menu as MenuIcon } from "@mui/icons-material";
+import { DeleteForever, Restore, DeselectOutlined, Menu as MenuIcon, DeleteSweep, RestoreFromTrash, Close } from "@mui/icons-material";
 import { useAuthUser } from "react-auth-kit";
 import { useNavigate } from "react-router-dom";
 import {
@@ -31,6 +36,8 @@ import {
     bulkHardDeleteLeadsApi,
     restoreLeadApi,
     hardDeleteLeadApi,
+    restoreAllLeadsApi,
+    hardDeleteAllLeadsApi,
 } from "../../../Api/Service";
 import Sidebar from "./Sidebar.js";
 import { toast } from "react-toastify";
@@ -58,6 +65,10 @@ const RecycleBin = () => {
     const [deletingId, setDeletingId] = useState(null);
     const [bulkRestoring, setBulkRestoring] = useState(false);
     const [bulkDeleting, setBulkDeleting] = useState(false);
+    const [restoringAll, setRestoringAll] = useState(false);
+    const [deletingAll, setDeletingAll] = useState(false);
+    const [confirmRestoreAllOpen, setConfirmRestoreAllOpen] = useState(false);
+    const [confirmDeleteAllOpen, setConfirmDeleteAllOpen] = useState(false);
 
     useEffect(() => {
         const handleResize = () => {
@@ -186,6 +197,34 @@ const RecycleBin = () => {
         }
     };
 
+    const restoreAll = async () => {
+        try {
+            setRestoringAll(true);
+            const res = await restoreAllLeadsApi();
+            toast.success(res?.msg || 'All leads restored from recycle bin');
+            setConfirmRestoreAllOpen(false);
+            fetchDeleted(1);
+        } catch (e) {
+            toast.error('Failed to restore all leads');
+        } finally {
+            setRestoringAll(false);
+        }
+    };
+
+    const deleteAll = async () => {
+        try {
+            setDeletingAll(true);
+            const res = await hardDeleteAllLeadsApi();
+            toast.success(res?.msg || 'All leads permanently deleted from recycle bin');
+            setConfirmDeleteAllOpen(false);
+            fetchDeleted(1);
+        } catch (e) {
+            toast.error('Failed to permanently delete all leads');
+        } finally {
+            setDeletingAll(false);
+        }
+    };
+
     const handleLimit = (e) => {
         const limit = parseInt(e.target.value);
         setPagination(prev => ({ ...prev, limit }));
@@ -234,7 +273,63 @@ const RecycleBin = () => {
                     </Toolbar>
                 </AppBar>
 
-                <Box sx={{ flex: 1, overflow: "auto", p: 3 }}>
+                <Box sx={{ flex: 1, overflow: "auto", p: { xs: 2, sm: 3 } }}>
+
+                    {/* Action Bar with Restore All / Delete All */}
+                    <Box sx={{ 
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        alignItems: { xs: "flex-start", md: "center" },
+                        flexDirection: { xs: "column", md: "row" },
+                        gap: 2,
+                        mb: 3 
+                    }}>
+                        <Box>
+                            <Typography variant="h6" fontWeight="bold" gutterBottom>
+                                Deleted Leads
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+                                {pagination.totalFiltered} lead(s) in recycle bin
+                            </Typography>
+                        </Box>
+                        {leads.length > 0 && (
+                            <Box sx={{ 
+                                display: "flex", 
+                                gap: 1,
+                                flexWrap: "wrap",
+                                width: { xs: '100%', md: 'auto' }
+                            }}>
+                                <Button
+                                    variant="outlined"
+                                    color="success"
+                                    startIcon={<RestoreFromTrash />}
+                                    onClick={() => setConfirmRestoreAllOpen(true)}
+                                    disabled={restoringAll || loading}
+                                    size="small"
+                                    sx={{ 
+                                        flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                        borderRadius: 2
+                                    }}
+                                >
+                                    Restore All
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    color="error"
+                                    startIcon={<DeleteSweep />}
+                                    onClick={() => setConfirmDeleteAllOpen(true)}
+                                    disabled={deletingAll || loading}
+                                    size="small"
+                                    sx={{ 
+                                        flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                        borderRadius: 2
+                                    }}
+                                >
+                                    Empty Bin
+                                </Button>
+                            </Box>
+                        )}
+                    </Box>
 
                     <Card elevation={2} sx={{ mb: 3, borderRadius: 3 }}>
                         <CardContent>
@@ -247,12 +342,14 @@ const RecycleBin = () => {
                                     placeholder="Search..."
                                     value={filters.search}
                                     onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                                    sx={{ minWidth: { xs: '100%', sm: '200px' } }}
                                 />
                                 <Select
                                     size="small"
                                     value={filters.status}
                                     onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
                                     displayEmpty
+                                    sx={{ minWidth: { xs: '100%', sm: '150px' } }}
                                 >
                                     <MenuItem value="">All Statuses</MenuItem>
                                     <MenuItem value="New">New</MenuItem>
@@ -266,17 +363,97 @@ const RecycleBin = () => {
                     </Card>
 
                     {selected.size > 0 && (
-                        <Card elevation={2} sx={{ mb: 2, borderRadius: 3, bgcolor: 'primary.light' }}>
-                            <CardContent>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Typography variant="body1" fontWeight="bold">{selected.size} lead(s) selected</Typography>
-                                    <Box sx={{ display: 'flex', gap: 1 }}>
-                                        <Button variant="outlined" startIcon={<DeselectOutlined />} onClick={() => setSelected(new Set())}>Deselect All</Button>
-                                        <Button variant="contained" startIcon={<Restore />} onClick={restoreSelected} disabled={bulkRestoring || loading}>
-                                            {bulkRestoring ? 'Restoring...' : 'Restore Selected'}
+                        <Card elevation={4} sx={{ 
+                            mb: 2, 
+                            borderRadius: 3, 
+                            bgcolor: 'primary.main',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 10
+                        }}>
+                            <CardContent sx={{ '&:last-child': { pb: 2 } }}>
+                                <Box sx={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: { xs: 'flex-start', sm: 'center' },
+                                    flexDirection: { xs: 'column', sm: 'row' },
+                                    gap: 2
+                                }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                        <Badge 
+                                            badgeContent={selected.size} 
+                                            color="error"
+                                            sx={{
+                                                '& .MuiBadge-badge': {
+                                                    fontSize: '0.875rem',
+                                                    height: 24,
+                                                    minWidth: 24,
+                                                    fontWeight: 'bold'
+                                                }
+                                            }}
+                                        >
+                                            <DeselectOutlined sx={{ color: 'white', fontSize: { xs: 28, sm: 32 } }} />
+                                        </Badge>
+                                        <Box>
+                                            <Typography variant="subtitle1" fontWeight="bold" sx={{ color: 'white' }}>
+                                                {selected.size} Lead{selected.size > 1 ? 's' : ''} Selected
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.9)', display: { xs: 'none', sm: 'block' } }}>
+                                                Choose an action below
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                    <Box sx={{ 
+                                        display: 'flex', 
+                                        gap: 1,
+                                        flexWrap: 'wrap',
+                                        width: { xs: '100%', sm: 'auto' }
+                                    }}>
+                                        <Button 
+                                            variant="outlined" 
+                                            startIcon={<Close sx={{ display: { xs: 'none', sm: 'block' } }} />} 
+                                            onClick={() => setSelected(new Set())}
+                                            size="small"
+                                            sx={{ 
+                                                flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                                color: 'white',
+                                                borderColor: 'rgba(255,255,255,0.5)',
+                                                fontWeight: 'bold',
+                                                '&:hover': {
+                                                    borderColor: 'white',
+                                                    bgcolor: 'rgba(255,255,255,0.1)'
+                                                }
+                                            }}
+                                        >
+                                            Clear
                                         </Button>
-                                        <Button color="error" variant="contained" startIcon={<DeleteForever />} onClick={deleteSelected} disabled={bulkDeleting || loading}>
-                                            {bulkDeleting ? 'Deleting...' : 'Delete Selected'}
+                                        <Button 
+                                            variant="contained" 
+                                            color="success"
+                                            startIcon={<Restore sx={{ display: { xs: 'none', sm: 'block' } }} />} 
+                                            onClick={restoreSelected} 
+                                            disabled={bulkRestoring || loading}
+                                            size="small"
+                                            sx={{ 
+                                                flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                                fontWeight: 'bold'
+                                            }}
+                                        >
+                                            {bulkRestoring ? 'Restoring...' : 'Restore'}
+                                        </Button>
+                                        <Button 
+                                            color="error" 
+                                            variant="contained" 
+                                            startIcon={<DeleteForever />} 
+                                            onClick={deleteSelected} 
+                                            disabled={bulkDeleting || loading}
+                                            size="small"
+                                            sx={{ 
+                                                flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                                fontWeight: 'bold'
+                                            }}
+                                        >
+                                            {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
                                         </Button>
                                     </Box>
                                 </Box>
@@ -362,6 +539,80 @@ const RecycleBin = () => {
                     </Card>
                 </Box>
             </Box>
+
+            {/* Restore All Confirmation Dialog */}
+            <Dialog
+                open={confirmRestoreAllOpen}
+                onClose={() => setConfirmRestoreAllOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <RestoreFromTrash color="success" />
+                        <Typography variant="h6">Restore All Leads?</Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body1">
+                        Are you sure you want to restore all <strong>{pagination.totalFiltered} lead(s)</strong> from the recycle bin?
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                        All leads will be restored to the active leads list and will be available again.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmRestoreAllOpen(false)} disabled={restoringAll}>
+                        Cancel
+                    </Button>
+                    <Button 
+                        variant="contained" 
+                        color="success" 
+                        onClick={restoreAll} 
+                        disabled={restoringAll}
+                        startIcon={restoringAll ? <CircularProgress size={20} /> : <RestoreFromTrash />}
+                    >
+                        {restoringAll ? 'Restoring...' : 'Restore All'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Delete All Confirmation Dialog */}
+            <Dialog
+                open={confirmDeleteAllOpen}
+                onClose={() => setConfirmDeleteAllOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <DeleteSweep color="error" />
+                        <Typography variant="h6">Empty Recycle Bin?</Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body1">
+                        Are you sure you want to <strong>permanently delete all {pagination.totalFiltered} lead(s)</strong> from the recycle bin?
+                    </Typography>
+                    <Typography variant="body2" color="error" sx={{ mt: 2, fontWeight: 'bold' }}>
+                        ⚠️ This action cannot be undone! All leads will be permanently removed from the database.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmDeleteAllOpen(false)} disabled={deletingAll}>
+                        Cancel
+                    </Button>
+                    <Button 
+                        variant="contained" 
+                        color="error" 
+                        onClick={deleteAll} 
+                        disabled={deletingAll}
+                        startIcon={deletingAll ? <CircularProgress size={20} /> : <DeleteSweep />}
+                    >
+                        {deletingAll ? 'Deleting...' : 'Empty Bin'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

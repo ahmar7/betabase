@@ -301,3 +301,9 @@ export const bulkRestoreLeadsApi = (leadIds) => {
 export const bulkHardDeleteLeadsApi = (leadIds) => {
   return postApi(`/crm/recycle/bulkHardDelete`, { leadIds });
 };
+export const restoreAllLeadsApi = () => {
+  return postApi(`/crm/recycle/restoreAll`);
+};
+export const hardDeleteAllLeadsApi = () => {
+  return deleteApi(`/crm/recycle/hardDeleteAll`);
+};

@@ -569,6 +569,41 @@ exports.deleteLead = async (req, res) => {
             });
         }
 
+        // ✅ SECURITY: Check record-level authorization
+        if (req.user.role === 'subadmin') {
+            // Subadmin can only delete their own leads
+            if (!lead.agent || lead.agent.toString() !== req.user._id.toString()) {
+                return res.status(403).json({
+                    success: false,
+                    msg: 'Unauthorized: You can only delete your own leads'
+                });
+            }
+        } else if (req.user.role === 'admin') {
+            // Admin can delete own leads + subadmin leads (if they have permission)
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (me?.adminPermissions?.canManageCrmLeads) {
+                // Admin with permission can delete own + subadmin leads
+                const subadmins = await User.find({ role: 'subadmin' }).select('_id');
+                const allowedAgents = [req.user._id.toString(), ...subadmins.map(s => s._id.toString())];
+                
+                if (lead.agent && !allowedAgents.includes(lead.agent.toString())) {
+                    return res.status(403).json({
+                        success: false,
+                        msg: 'Unauthorized: You can only delete your own leads or subadmin leads'
+                    });
+                }
+            } else {
+                // Admin without permission can only delete own leads
+                if (!lead.agent || lead.agent.toString() !== req.user._id.toString()) {
+                    return res.status(403).json({
+                        success: false,
+                        msg: 'Unauthorized: You can only delete your own leads'
+                    });
+                }
+            }
+        }
+        // Superadmin can delete any lead (no check needed)
+
         // Soft delete by setting isDeleted to true and timestamp
         lead.isDeleted = true;
         lead.deletedAt = new Date();
@@ -579,7 +614,7 @@ exports.deleteLead = async (req, res) => {
             msg: 'Lead deleted successfully'
         });
     } catch (err) {
-        console.error("Error fetching leads:", err);
+        console.error("Error deleting lead:", err);
         res.status(500).json({
             success: false,
             message: "Server Error",
@@ -600,20 +635,73 @@ exports.bulkDeleteLeads = async (req, res) => {
             });
         }
 
+        // ✅ SECURITY: Check record-level authorization for bulk delete
+        const leads = await Lead.find({ _id: { $in: leadIds } }).select('agent');
+        
+        if (leads.length === 0) {
+            return res.status(404).json({
+                success: false,
+                msg: 'No leads found'
+            });
+        }
+
+        // Build authorization filter based on user role
+        let authorizedLeadIds = [];
+        
+        if (req.user.role === 'superadmin') {
+            // Superadmin can delete all leads
+            authorizedLeadIds = leadIds;
+        } else if (req.user.role === 'admin') {
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (me?.adminPermissions?.canManageCrmLeads) {
+                // Admin with permission can delete own + subadmin leads
+                const subadmins = await User.find({ role: 'subadmin' }).select('_id');
+                const allowedAgents = [req.user._id.toString(), ...subadmins.map(s => s._id.toString())];
+                
+                authorizedLeadIds = leads
+                    .filter(lead => !lead.agent || allowedAgents.includes(lead.agent.toString()))
+                    .map(lead => lead._id);
+            } else {
+                // Admin without permission can only delete own leads
+                authorizedLeadIds = leads
+                    .filter(lead => lead.agent && lead.agent.toString() === req.user._id.toString())
+                    .map(lead => lead._id);
+            }
+        } else if (req.user.role === 'subadmin') {
+            // Subadmin can only delete their own leads
+            authorizedLeadIds = leads
+                .filter(lead => lead.agent && lead.agent.toString() === req.user._id.toString())
+                .map(lead => lead._id);
+        }
+
+        if (authorizedLeadIds.length === 0) {
+            return res.status(403).json({
+                success: false,
+                msg: 'Unauthorized: You do not have permission to delete these leads'
+            });
+        }
+
         const result = await Lead.updateMany(
-            { _id: { $in: leadIds } },
+            { _id: { $in: authorizedLeadIds } },
             { $set: { isDeleted: true, deletedAt: new Date() } }
         );
 
+        const skippedCount = leadIds.length - authorizedLeadIds.length;
+        const message = skippedCount > 0 
+            ? `${result.modifiedCount} leads deleted successfully (${skippedCount} skipped due to permissions)`
+            : `${result.modifiedCount} leads deleted successfully`;
+
         res.status(200).json({
             success: true,
-            msg: `${result.modifiedCount} leads deleted successfully`,
-            data: { deletedCount: result.modifiedCount }
+            msg: message,
+            data: { 
+                deletedCount: result.modifiedCount,
+                skippedCount: skippedCount
+            }
         });
 
-
     } catch (err) {
-        console.error("Error fetching leads:", err);
+        console.error("Error bulk deleting leads:", err);
         res.status(500).json({
             success: false,
             message: "Server Error",
@@ -625,8 +713,28 @@ exports.deleteAllLeads = async (req, res) => {
     try {
         const Lead = await getLeadModel();
 
+        // ✅ SECURITY: Build query based on user role - only delete leads they have access to
+        let query = { isDeleted: false };
+        
+        if (req.user.role === 'subadmin') {
+            // Subadmin can only delete their own leads
+            query.agent = req.user._id;
+        } else if (req.user.role === 'admin') {
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (me?.adminPermissions?.canManageCrmLeads) {
+                // Admin with permission can delete own + subadmin leads
+                const subadmins = await User.find({ role: 'subadmin' }).select('_id');
+                const allowedAgents = [req.user._id, ...subadmins.map(s => s._id)];
+                query.agent = { $in: allowedAgents };
+            } else {
+                // Admin without permission can only delete own leads
+                query.agent = req.user._id;
+            }
+        }
+        // Superadmin can delete all leads (no additional query filter)
+
         const result = await Lead.updateMany(
-            { isDeleted: false },
+            query,
             { $set: { isDeleted: true, deletedAt: new Date() } }
         );
 
@@ -636,9 +744,8 @@ exports.deleteAllLeads = async (req, res) => {
             data: { deletedCount: result.modifiedCount }
         });
 
-
     } catch (err) {
-        console.error("Error fetching leads:", err);
+        console.error("Error deleting all leads:", err);
         res.status(500).json({
             success: false,
             message: "Server Error",
@@ -676,6 +783,41 @@ exports.editLead = async (req, res) => {
             });
         }
 
+        // ✅ SECURITY: Check record-level authorization
+        if (req.user.role === 'subadmin') {
+            // Subadmin can only edit their own leads
+            if (!lead.agent || lead.agent.toString() !== req.user._id.toString()) {
+                return res.status(403).json({
+                    success: false,
+                    msg: 'Unauthorized: You can only edit your own leads'
+                });
+            }
+        } else if (req.user.role === 'admin') {
+            // Admin can edit own leads + subadmin leads (if they have permission)
+            const me = await User.findById(req.user._id).select('adminPermissions');
+            if (me?.adminPermissions?.canManageCrmLeads) {
+                // Admin with permission can edit own + subadmin leads
+                const subadmins = await User.find({ role: 'subadmin' }).select('_id');
+                const allowedAgents = [req.user._id.toString(), ...subadmins.map(s => s._id.toString())];
+                
+                if (lead.agent && !allowedAgents.includes(lead.agent.toString())) {
+                    return res.status(403).json({
+                        success: false,
+                        msg: 'Unauthorized: You can only edit your own leads or subadmin leads'
+                    });
+                }
+            } else {
+                // Admin without permission can only edit own leads
+                if (!lead.agent || lead.agent.toString() !== req.user._id.toString()) {
+                    return res.status(403).json({
+                        success: false,
+                        msg: 'Unauthorized: You can only edit your own leads'
+                    });
+                }
+            }
+        }
+        // Superadmin can edit any lead (no check needed)
+
         // Check if email is being changed and if it conflicts with another lead
         if (email !== lead.email) {
             const existingLead = await Lead.findOne({
@@ -709,12 +851,8 @@ exports.editLead = async (req, res) => {
             data: { lead }
         });
 
-
-
-
-
     } catch (err) {
-        console.error("Error fetching leads:", err);
+        console.error("Error updating lead:", err);
         res.status(500).json({
             success: false,
             message: "Server Error",
@@ -957,6 +1095,41 @@ exports.bulkHardDeleteLeads = async (req, res) => {
         res.status(200).json({ success: true, msg: `${result.deletedCount} lead(s) permanently deleted`, data: { deleted: result.deletedCount } });
     } catch (err) {
         console.error('Error bulk hard deleting leads:', err);
+        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+    }
+};
+
+// Restore ALL deleted leads
+exports.restoreAllLeads = async (req, res) => {
+    try {
+        const Lead = await getLeadModel();
+        const result = await Lead.updateMany(
+            { isDeleted: true },
+            { $set: { isDeleted: false, deletedAt: null } }
+        );
+        res.status(200).json({
+            success: true,
+            msg: `All ${result.modifiedCount} lead(s) restored from recycle bin`,
+            data: { restored: result.modifiedCount }
+        });
+    } catch (err) {
+        console.error('Error restoring all leads:', err);
+        res.status(500).json({ success: false, message: 'Server Error', error: err.message });
+    }
+};
+
+// Permanently delete ALL leads from recycle bin
+exports.hardDeleteAllLeads = async (req, res) => {
+    try {
+        const Lead = await getLeadModel();
+        const result = await Lead.deleteMany({ isDeleted: true });
+        res.status(200).json({
+            success: true,
+            msg: `All ${result.deletedCount} lead(s) permanently deleted from recycle bin`,
+            data: { deleted: result.deletedCount }
+        });
+    } catch (err) {
+        console.error('Error permanently deleting all leads:', err);
         res.status(500).json({ success: false, message: 'Server Error', error: err.message });
     }
 };

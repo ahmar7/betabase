@@ -3,7 +3,7 @@ let express = require("express");
 const { authorizedRoles, isAuthorizedUser, checkCrmAccess } = require("../middlewares/auth");
 
 const singleUpload = require("../middlewares/multer");
-const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent, getDeletedLeads, restoreLead, hardDeleteLead, bulkRestoreLeads, bulkHardDeleteLeads } = require("../controllers/crmController");
+const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent, getDeletedLeads, restoreLead, hardDeleteLead, bulkRestoreLeads, bulkHardDeleteLeads, restoreAllLeads, hardDeleteAllLeads } = require("../controllers/crmController");
 const multer = require('multer');
 
 // Configure multer for file uploads
@@ -52,6 +52,10 @@ router.route('/crm/recycle/bulkRestore').post(isAuthorizedUser,
     authorizedRoles("superadmin"), checkCrmAccess, bulkRestoreLeads);
 router.route('/crm/recycle/bulkHardDelete').post(isAuthorizedUser,
     authorizedRoles("superadmin"), checkCrmAccess, bulkHardDeleteLeads);
+router.route('/crm/recycle/restoreAll').post(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, restoreAllLeads);
+router.route('/crm/recycle/hardDeleteAll').delete(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, hardDeleteAllLeads);
 // router.route('/crm/leads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), uploadCSV);
 
 module.exports = router;
