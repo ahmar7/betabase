@@ -1307,11 +1307,17 @@ const LeadsPage = () => {
         "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
     ]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-    const [isMobileMenu, setisMobileMenu] = useState(true)
+    const [isMobileMenu, setisMobileMenu] = useState(false) // Start with false (closed) on mobile
+    
     useEffect(() => {
         const handleResize = () => {
             if (window.innerWidth < 768) {
-                setIsSidebarCollapsed(false); // collapse on mobile
+                // Mobile: close sidebar by default
+                setisMobileMenu(false);
+                setIsSidebarCollapsed(false);
+            } else {
+                // Desktop: open sidebar by default
+                setisMobileMenu(true);
             }
         };
 
@@ -1777,18 +1783,9 @@ const LeadsPage = () => {
         }
     };
     return (
-        <Box sx={{ display: "block", height: "100vh", bgcolor: "grey.50" }}>
+        <Box sx={{ display: "block", height: "100vh", bgcolor: "grey.50", position: "relative" }}>
             {/* Sidebar */}
-
-            <Box
-                sx={{
-                    // display: {
-                    //     xs: "none", // hide on mobile
-                    //     md: "block", // show on desktop
-                    // },
-
-                }}
-            >
+            <Box>
                 <Sidebar
                     setisMobileMenu={setisMobileMenu}
                     isMobileMenu={isMobileMenu}
@@ -1796,6 +1793,24 @@ const LeadsPage = () => {
                     setIsSidebarCollapsed={setIsSidebarCollapsed}
                 />
             </Box>
+
+            {/* Overlay for mobile - closes sidebar when clicked */}
+            {isMobileMenu && (
+                <Box
+                    onClick={() => setisMobileMenu(false)}
+                    sx={{
+                        position: "fixed",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: "rgba(0, 0, 0, 0.5)",
+                        zIndex: 1199, // Below sidebar (1200) but above content
+                        display: { xs: "block", md: "none" }, // Only show on mobile
+                        cursor: "pointer"
+                    }}
+                />
+            )}
 
             {/* Main Content */}
             <Box

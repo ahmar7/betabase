@@ -552,24 +552,31 @@ const AdminErrorLogs = () => {
                 </Box>
 
                 <Grid container spacing={3}>
-                  <Grid item xs={12} md={3}>
+                  <Grid item xs={12} sm={6} md={3}>
                     <Paper sx={{
                       p: 2,
                       backgroundColor: 'rgba(255,255,255,0.1)',
                       backdropFilter: 'blur(10px)',
-                      border: '1px solid rgba(255,255,255,0.2)'
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      height: '100%',
+                      minHeight: 100,
+                      display: 'flex',
+                      alignItems: 'center'
                     }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
                         <Box sx={{
-                          p: 1,
+                          p: 1.5,
                           borderRadius: 2,
-                          backgroundColor: 'rgba(255,255,255,0.2)'
+                          backgroundColor: 'rgba(255,255,255,0.2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
                         }}>
-                          <ErrorIcon sx={{ color: 'white' }} />
+                          <ErrorIcon sx={{ color: 'white', fontSize: 28 }} />
                         </Box>
-                        <Box>
+                        <Box sx={{ flex: 1 }}>
                           <Typography variant="h4" color="white" fontWeight={700}>
-                          {totalCount}
+                            {totalCount}
                           </Typography>
                           <Typography variant="body2" color="rgba(255,255,255,0.8)">
                             Total Errors
@@ -579,22 +586,29 @@ const AdminErrorLogs = () => {
                     </Paper>
                   </Grid>
 
-                  <Grid item xs={12} md={3}>
+                  <Grid item xs={12} sm={6} md={3}>
                     <Paper sx={{
                       p: 2,
                       backgroundColor: 'rgba(255,255,255,0.1)',
                       backdropFilter: 'blur(10px)',
-                      border: '1px solid rgba(255,255,255,0.2)'
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      height: '100%',
+                      minHeight: 100,
+                      display: 'flex',
+                      alignItems: 'center'
                     }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
                         <Box sx={{
-                          p: 1,
+                          p: 1.5,
                           borderRadius: 2,
-                          backgroundColor: selectedIds.length > 0 ? 'rgba(244,67,54,0.3)' : 'rgba(255,255,255,0.2)'
+                          backgroundColor: selectedIds.length > 0 ? 'rgba(244,67,54,0.3)' : 'rgba(255,255,255,0.2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
                         }}>
-                          <DeleteIcon sx={{ color: selectedIds.length > 0 ? '#ff6b6b' : 'white' }} />
+                          <DeleteIcon sx={{ color: selectedIds.length > 0 ? '#ff6b6b' : 'white', fontSize: 28 }} />
                         </Box>
-                        <Box>
+                        <Box sx={{ flex: 1 }}>
                           <Typography
                             variant="h4"
                             color={selectedIds.length > 0 ? "#ff6b6b" : "white"}
@@ -604,6 +618,81 @@ const AdminErrorLogs = () => {
                           </Typography>
                           <Typography variant="body2" color="rgba(255,255,255,0.8)">
                             Selected
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Paper>
+                  </Grid>
+
+                  {/* New Card: Critical Errors (500+) */}
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{
+                      p: 2,
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      backdropFilter: 'blur(10px)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      height: '100%',
+                      minHeight: 100,
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                        <Box sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          backgroundColor: 'rgba(244,67,54,0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <WarningIcon sx={{ color: '#ff6b6b', fontSize: 28 }} />
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="h4" color="#ff6b6b" fontWeight={700}>
+                            {logs.filter(log => log.statusCode >= 500).length}
+                          </Typography>
+                          <Typography variant="body2" color="rgba(255,255,255,0.8)">
+                            Critical
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Paper>
+                  </Grid>
+
+                  {/* New Card: Recent (24h) */}
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{
+                      p: 2,
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      backdropFilter: 'blur(10px)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      height: '100%',
+                      minHeight: 100,
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                        <Box sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          backgroundColor: 'rgba(33,150,243,0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <ScheduleIcon sx={{ color: '#64b5f6', fontSize: 28 }} />
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="h4" color="#64b5f6" fontWeight={700}>
+                            {logs.filter(log => {
+                              const logDate = new Date(log.createdAt);
+                              const now = new Date();
+                              const diffHours = (now - logDate) / (1000 * 60 * 60);
+                              return diffHours <= 24;
+                            }).length}
+                          </Typography>
+                          <Typography variant="body2" color="rgba(255,255,255,0.8)">
+                            Last 24h
                           </Typography>
                         </Box>
                       </Box>
