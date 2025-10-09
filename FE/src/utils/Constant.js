@@ -1,7 +1,6 @@
 // src/config.js
 const baseUrl =
-  process.env.REACT_APP_API_URL 
-  // ||
-  //  "https://api.bitblaze.space/api/v1";
+  process.env.REACT_APP_API_URL ||
+  "http://localhost:5000/api";  // Default fallback for local development
 
 module.exports = { baseUrl };

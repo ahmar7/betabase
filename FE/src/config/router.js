@@ -60,6 +60,7 @@ import UserOnlineStatus from "./userOnlineStatus.js";
 import LoginPage from "../jsx/Admin/CRM/Login.js";
 import LeadsPage from "../jsx/Admin/CRM/leads.js";
 import RecycleBin from "../jsx/Admin/CRM/RecycleBin.jsx";
+import FailedEmails from "../jsx/Admin/CRM/FailedEmails.jsx";
 function AppRouter() {
   const signOut = useSignOut();
 
@@ -133,6 +134,14 @@ export default function Router() {
             element={
               <RequireAuth loginPath={"/auth/login/crm"}>
                 <RecycleBin />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/admin/crm/failed-emails"
+            element={
+              <RequireAuth loginPath={"/auth/login/crm"}>
+                <FailedEmails />
               </RequireAuth>
             }
           />

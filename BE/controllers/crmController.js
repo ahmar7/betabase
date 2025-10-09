@@ -3,6 +3,8 @@ const getLeadModel = require('../crmDB/models/leadsModel');
 const csv = require('csv-parser');
 const fs = require('fs');
 const User = require('../models/userModel'); // from main DB
+const sendEmail = require('../utils/sendEmail'); // Email utility
+const crypto = require('crypto'); // For generating passwords
 
 const jwtToken = require('../utils/jwtToken');
 const catchAsyncErrors = require('../middlewares/catchAsyncErrors');
@@ -1049,6 +1051,16 @@ exports.exportLeads = async (req, res) => {
                         month: 'short',
                         day: 'numeric'
                     });
+                }
+
+                // Format phone numbers to prevent scientific notation
+                if (field === 'phone') {
+                    // Convert to string and ensure it's treated as text
+                    // Add a tab character prefix to force Excel to treat it as text
+                    if (value) {
+                        return `"\t${String(value).replace(/"/g, '""')}"`;
+                    }
+                    return '""';
                 }
 
                 // Escape CSV special characters and wrap in quotes

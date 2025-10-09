@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useMemo, memo } from "react";
 import {
     Box,
     AppBar,
@@ -81,7 +81,8 @@ import {
     DeselectOutlined,
     Menu as MenuIcon,
     CheckCircle,
-    Upload as UploadIcon
+    Upload as UploadIcon,
+    PersonAdd as PersonAddIcon
 } from "@mui/icons-material";
 import {
     adminCrmLeadsApi,
@@ -94,13 +95,17 @@ import {
     deleteAllLeadsApiWithProgress,
     updateLeadApi, exportLeadsApi,
     allUsersApi,
-    assignLeadsApi
+    assignLeadsApi,
+    activateLeadApi,
+    activateLeadsBulkApi,
+    activateLeadsBulkWithProgress
 } from "../../../Api/Service";
 import { toast } from "react-toastify";
 import Sidebar from "./Sidebar.js";
 import { useNavigate } from "react-router-dom";
 import { useAuthUser } from "react-auth-kit";
-import { useCallback } from "react";
+import ActivationProgressTracker from "../../components/ActivationProgressTracker";
+import { debounce } from "../../../utils/debounce";
 
 // ... (Field mapping configuration and CreateLeadDialog component remain the same)
 // Field mapping configuration based on updated schema
@@ -117,8 +122,8 @@ const AVAILABLE_FIELDS = [
 
 const STATUS_OPTIONS = ["New", "Call Back", "Not Active", "Active", "Not Interested"];
 
-// Enhanced Create Lead Dialog Component
-const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, allowCsvUpload }) => {
+// Enhanced Create Lead Dialog Component - Memoized for performance
+const CreateLeadDialog = memo(({ open, onClose, onLeadCreated, agents, currentUser, allowCsvUpload }) => {
 
     const [activeStep, setActiveStep] = useState(0);
     const [tabValue, setTabValue] = useState(0);
@@ -959,9 +964,10 @@ const CreateLeadDialog = ({ open, onClose, onLeadCreated, agents, currentUser, a
             </DialogContent>
         </Dialog>
     );
-};
-// View Details Component
-const LeadDetails = ({ lead, open, onClose }) => {
+});
+
+// View Details Component - Memoized for performance
+const LeadDetails = memo(({ lead, open, onClose }) => {
     if (!lead) return null;
 
     return (
@@ -1066,10 +1072,10 @@ const LeadDetails = ({ lead, open, onClose }) => {
             </DialogActions>
         </Dialog>
     );
-};
+});
 
-// Edit Lead Component
-const EditLeadDialog = ({ lead, open, onClose, onLeadUpdated }) => {
+// Edit Lead Component - Memoized for performance
+const EditLeadDialog = memo(({ lead, open, onClose, onLeadUpdated }) => {
 
     const [editForm, setEditForm] = useState({
         firstName: "",
@@ -1239,7 +1245,7 @@ const EditLeadDialog = ({ lead, open, onClose, onLeadUpdated }) => {
             </DialogActions>
         </Dialog>
     );
-};
+});
 
 const LeadsPage = () => {
 
@@ -1267,7 +1273,7 @@ const LeadsPage = () => {
         totalPages: 1,
         totalLeads: 0,
         totalFiltered: 0,
-        limit: 100,
+        limit: 50,  // Reduced from 100 for better performance
         hasNextPage: false,
         hasPrevPage: false,
     });
@@ -1340,6 +1346,8 @@ const LeadsPage = () => {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteType, setDeleteType] = useState(''); // 'single', 'bulk', 'all'
     const [deleting, setDeleting] = useState(false);
+    const [activating, setActivating] = useState(false); // Track activation state
+    const [activateConfirmOpen, setActivateConfirmOpen] = useState(false); // Confirmation dialog
     const [assignDialogOpen, setAssignDialogOpen] = useState(false);
     const [assigning, setAssigning] = useState(false);
     const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -1353,7 +1361,7 @@ const LeadsPage = () => {
 
     // Toggle sidebar
     const currentAuthUser = authUser();
-    const getAllUsers = async () => {
+    const getAllUsers = useCallback(async () => {
         try {
             const allUsers = await allUsersApi();
 
@@ -1414,11 +1422,11 @@ const LeadsPage = () => {
         } catch (error) {
             toast.error(error.message || "Error fetching users");
         }
-    }; // Add navigate to dependencies
-    useEffect(() => {
-
-        getAllUsers()
     }, []);
+    
+    useEffect(() => {
+        getAllUsers();
+    }, [getAllUsers]);
     const [agents, setAgents] = useState([]);
     const [currentUserLatest, setCurrentUserLatest] = useState(null);
 
@@ -1490,15 +1498,17 @@ const LeadsPage = () => {
         }
     };
 
-    const handleSelectLead = (leadId) => {
-        const newSelected = new Set(selectedLeads);
-        if (newSelected.has(leadId)) {
-            newSelected.delete(leadId);
-        } else {
-            newSelected.add(leadId);
-        }
-        setSelectedLeads(newSelected);
-    };
+    const handleSelectLead = useCallback((leadId) => {
+        setSelectedLeads(prev => {
+            const newSelected = new Set(prev);
+            if (newSelected.has(leadId)) {
+                newSelected.delete(leadId);
+            } else {
+                newSelected.add(leadId);
+            }
+            return newSelected;
+        });
+    }, []);
 
     // Delete handlers
     const handleDeleteClick = (type, lead = null) => {
@@ -1632,6 +1642,140 @@ const LeadsPage = () => {
         setAnchorEl(null);
     };
 
+    // Activation handlers
+    const handleActivateLead = async () => {
+        const lead = selectedLead;
+        setAnchorEl(null);
+
+        try {
+            const response = await activateLeadApi(lead._id);
+            if (response.success) {
+                toast.success(response.msg || 'Lead activated successfully!');
+                fetchLeads(pagination.currentPage, pagination.limit);
+            } else {
+                toast.error(response.msg || 'Failed to activate lead');
+            }
+        } catch (error) {
+            console.error('Activation error:', error);
+            toast.error(error.response?.data?.msg || 'Failed to activate lead');
+        }
+    };
+
+    const handleBulkActivate = async () => {
+        const leadIds = Array.from(selectedLeads);
+        
+        console.log('🚀 handleBulkActivate called with leadIds:', leadIds);
+        
+        if (leadIds.length === 0) {
+            toast.warning('No leads selected');
+            return;
+        }
+
+        // Close confirmation dialog
+        setActivateConfirmOpen(false);
+        setActivating(true);
+
+        // Generate unique session ID
+        const sessionId = `activation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        console.log('📝 Generated sessionId:', sessionId);
+
+        // Initialize progress in localStorage with sessionId
+        const initialProgress = {
+            total: leadIds.length,
+            activated: 0,
+            skipped: 0,
+            failed: 0,
+            emailsSent: 0,
+            emailsFailed: 0,
+            emailsPending: 0,
+            percentage: 0,
+            msg: `Starting activation of ${leadIds.length} leads...`,
+            completed: false,
+            type: 'start',
+            sessionId: sessionId  // Store sessionId for backend polling
+        };
+        
+        console.log('💾 Storing initial progress in localStorage:', initialProgress);
+        localStorage.setItem('activationProgress', JSON.stringify(initialProgress));
+        
+        // Trigger storage event manually (for same window)
+        window.dispatchEvent(new StorageEvent('storage', {
+            key: 'activationProgress',
+            newValue: JSON.stringify(initialProgress),
+            oldValue: null,
+            url: window.location.href,
+            storageArea: localStorage
+        }));
+        
+        // Verify it was stored
+        const storedCheck = localStorage.getItem('activationProgress');
+        console.log('✅ Verified localStorage contains:', storedCheck);
+
+        try {
+            console.log('📡 Calling activateLeadsBulkWithProgress API...');
+            
+            // Call API with progress tracking and sessionId
+            await activateLeadsBulkWithProgress(leadIds, sessionId, (progressData) => {
+                console.log('📊 Progress update received:', progressData);
+                
+                // Update localStorage with progress
+                const updatedProgress = {
+                    ...progressData,
+                    sessionId: sessionId,  // Ensure sessionId is always present
+                    completedAt: progressData.type === 'complete' || progressData.completed ? Date.now() : undefined
+                };
+                localStorage.setItem('activationProgress', JSON.stringify(updatedProgress));
+                
+                // Trigger storage event manually
+                window.dispatchEvent(new StorageEvent('storage', {
+                    key: 'activationProgress',
+                    newValue: JSON.stringify(updatedProgress)
+                }));
+                
+                console.log('💾 Updated localStorage with:', updatedProgress);
+            });
+
+            console.log('✅ Activation API completed successfully');
+            
+            // Refresh leads table
+            fetchLeads(pagination.currentPage, pagination.limit);
+            setSelectedLeads(new Set()); // Clear selection
+
+            toast.success('Bulk activation completed!');
+        } catch (error) {
+            console.error('❌ Bulk activation error:', error);
+            
+            // Get current progress from localStorage (don't overwrite with 0s!)
+            const currentStored = localStorage.getItem('activationProgress');
+            let currentProgress = initialProgress;
+            
+            if (currentStored) {
+                try {
+                    currentProgress = JSON.parse(currentStored);
+                } catch (e) {
+                    console.error('Failed to parse current progress:', e);
+                }
+            }
+            
+            // Update localStorage with error BUT keep current values
+            const errorProgress = {
+                ...currentProgress,  // Keep current values (NOT initialProgress with 0s!)
+                completed: true,
+                type: 'error',
+                msg: error.message || 'Network error - activation may still be processing',
+                completedAt: Date.now(),
+                sessionId: sessionId
+            };
+            localStorage.setItem('activationProgress', JSON.stringify(errorProgress));
+            console.log('💾 Stored error progress (keeping current values):', errorProgress);
+            
+            toast.error(error.message || 'Network error - check progress tracker');
+        } finally {
+            setActivating(false);
+            console.log('🏁 handleBulkActivate finished');
+        }
+    };
+
     // Pagination handlers (remain the same)
     const handlePageChange = (event, newPage) => {
         fetchLeads(newPage);
@@ -1655,7 +1799,7 @@ const LeadsPage = () => {
         }
     };
 
-    const getStatusChip = (status) => {
+    const getStatusChip = useCallback((status) => {
         const statusColors = {
             New: { color: "primary", variant: "outlined" },
             "Call Back": { color: "warning", variant: "outlined" },
@@ -1675,18 +1819,18 @@ const LeadsPage = () => {
                 sx={{ fontWeight: 600 }}
             />
         );
-    };
+    }, []);
 
-    const formatDate = (dateString) => {
+    const formatDate = useCallback((dateString) => {
         if (!dateString) return "";
         return new Date(dateString).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
             day: "numeric",
         });
-    };
+    }, []);
 
-    const handleFilterChange = (field, value) => {
+    const handleFilterChange = useCallback((field, value) => {
         // For search field, only update temporary search
         if (field === 'search') {
             setTempSearch(value);
@@ -1698,22 +1842,22 @@ const LeadsPage = () => {
             ...prev,
             [field]: value,
         }));
-    };
+    }, []);
 
     // Handle search button click
-    const handleSearch = () => {
+    const handleSearch = useCallback(() => {
         setFilters((prev) => ({
             ...prev,
             search: tempSearch,
         }));
-    };
+    }, [tempSearch]);
 
     // Handle Enter key in search field
-    const handleSearchKeyPress = (e) => {
+    const handleSearchKeyPress = useCallback((e) => {
         if (e.key === 'Enter') {
             handleSearch();
         }
-    };
+    }, [handleSearch]);
 
     // Clear all filters
     const handleClearFilters = () => {
@@ -1922,6 +2066,25 @@ const LeadsPage = () => {
                                             }}
                                         >
                                             Assign
+                                        </Button>
+                                    )}
+                                    {(authUser().user.role === 'superadmin' || authUser().user.role === 'admin') && (
+                                        <Button
+                                            variant="contained"
+                                            sx={{ 
+                                                flex: { xs: '1 1 auto', sm: '0 0 auto' },
+                                                fontWeight: 'bold',
+                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                '&:hover': {
+                                                    background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+                                                }
+                                            }}
+                                            startIcon={<PersonAddIcon />}
+                                            onClick={() => setActivateConfirmOpen(true)}
+                                            disabled={activating}
+                                            size="small"
+                                        >
+                                            {activating ? 'Activating...' : `Activate (${selectedLeads.size})`}
                                         </Button>
                                     )}
                                         <Button
@@ -2495,6 +2658,12 @@ const LeadsPage = () => {
                     <Edit sx={{ mr: 1, fontSize: 20 }} />
                     Edit Lead
                 </MenuItem>
+                {(authUser()?.user?.role === 'superadmin' || authUser()?.user?.role === 'admin') && (
+                    <MenuItem onClick={handleActivateLead} sx={{ color: "success.main" }}>
+                        <PersonAddIcon sx={{ mr: 1, fontSize: 20 }} />
+                        Activate User
+                    </MenuItem>
+                )}
                 <MenuItem onClick={handleDeleteLead} sx={{ color: "error.main" }}>
                     <Delete sx={{ mr: 1, fontSize: 20 }} />
                     Delete
@@ -2602,6 +2771,61 @@ const LeadsPage = () => {
                 </DialogActions>
             </Dialog>
 
+            {/* Activation Confirmation Dialog */}
+            <Dialog
+                open={activateConfirmOpen}
+                onClose={() => !activating && setActivateConfirmOpen(false)}
+                fullWidth
+                maxWidth="sm"
+            >
+                <DialogTitle>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <PersonAddIcon color="primary" />
+                        <Typography variant="h6">Confirm Activation</Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body1" sx={{ mb: 2 }}>
+                        You are about to activate <strong>{selectedLeads.size} lead{selectedLeads.size !== 1 ? 's' : ''}</strong> to users.
+                    </Typography>
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                        <Typography variant="body2">
+                            <strong>This will:</strong>
+                        </Typography>
+                        <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+                            <li>Create user accounts for each lead</li>
+                            <li>Generate random passwords</li>
+                            <li>Send welcome emails with credentials</li>
+                        </ul>
+                    </Alert>
+                    <Typography variant="body2" color="text.secondary">
+                        ℹ️ You can track the progress in real-time. The process will continue even if you refresh the page.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button 
+                        onClick={() => setActivateConfirmOpen(false)} 
+                        disabled={activating}
+                    >
+                        Cancel
+                    </Button>
+                    <Button 
+                        onClick={handleBulkActivate} 
+                        variant="contained"
+                        sx={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            '&:hover': {
+                                background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+                            }
+                        }}
+                        startIcon={activating ? <CircularProgress size={20} color="inherit" /> : <PersonAddIcon />}
+                        disabled={activating}
+                    >
+                        {activating ? 'Activating...' : `Activate ${selectedLeads.size} Lead${selectedLeads.size !== 1 ? 's' : ''}`}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
             {/* Assign Leads Dialog */}
             <Dialog 
                 open={assignDialogOpen} 
@@ -2667,6 +2891,9 @@ const LeadsPage = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Persistent Activation Progress Tracker */}
+            <ActivationProgressTracker />
         </Box>
     );
 };

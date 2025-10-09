@@ -4,6 +4,7 @@ const { authorizedRoles, isAuthorizedUser, checkCrmAccess } = require("../middle
 
 const singleUpload = require("../middlewares/multer");
 const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent, getDeletedLeads, restoreLead, hardDeleteLead, bulkRestoreLeads, bulkHardDeleteLeads, restoreAllLeads, hardDeleteAllLeads } = require("../controllers/crmController");
+const { activateLead, bulkActivateLeads, getActivationProgress, getFailedEmails, resendFailedEmails, deleteFailedEmails } = require("../controllers/activateLeads");
 const multer = require('multer');
 
 // Configure multer for file uploads
@@ -56,6 +57,23 @@ router.route('/crm/recycle/restoreAll').post(isAuthorizedUser,
     authorizedRoles("superadmin"), checkCrmAccess, restoreAllLeads);
 router.route('/crm/recycle/hardDeleteAll').delete(isAuthorizedUser,
     authorizedRoles("superadmin"), checkCrmAccess, hardDeleteAllLeads);
+
+// Activate leads - convert to users
+router.route('/crm/activateLead/:leadId').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, activateLead);
+router.route('/crm/bulkActivateLeads').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, bulkActivateLeads);
+router.route('/crm/activation/progress/:sessionId').get(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, getActivationProgress);
+
+// Failed emails management
+router.route('/crm/failedEmails').get(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, getFailedEmails);
+router.route('/crm/failedEmails/resend').post(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, resendFailedEmails);
+router.route('/crm/failedEmails/delete').post(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, deleteFailedEmails);
+
 // router.route('/crm/leads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), uploadCSV);
 
 module.exports = router;

@@ -474,3 +474,106 @@ export const restoreAllLeadsApi = () => {
 export const hardDeleteAllLeadsApi = () => {
   return deleteApi(`/crm/recycle/hardDeleteAll`);
 };
+
+// Activate lead(s) to convert them into users
+export const activateLeadApi = (leadId) => {
+  return postApi(`/crm/activateLead/${leadId}`);
+};
+
+export const activateLeadsBulkApi = (leadIds, sessionId) => {
+  return postApi(`/crm/bulkActivateLeads`, { leadIds, sessionId });
+};
+
+// Get activation progress by session ID
+export const getActivationProgressApi = (sessionId) => {
+  return getApi(`/crm/activation/progress/${sessionId}`);
+};
+
+// Failed emails management
+export const getFailedEmailsApi = (params = {}) => {
+  const queryString = new URLSearchParams(params).toString();
+  return getApi(`/crm/failedEmails?${queryString}`);
+};
+
+export const resendFailedEmailsApi = (emailIds) => {
+  return postApi(`/crm/failedEmails/resend`, { emailIds });
+};
+
+export const deleteFailedEmailsApi = (emailIds) => {
+  return postApi(`/crm/failedEmails/delete`, { emailIds });
+};
+
+// Activate bulk leads with progress tracking (SSE)
+export const activateLeadsBulkWithProgress = async (leadIds, sessionId, onProgress) => {
+  console.log('📡 activateLeadsBulkWithProgress called with:', { leadIds: leadIds.length, sessionId });
+  
+  try {
+    console.log('🌐 Fetching:', `${baseUrl}/crm/bulkActivateLeads?enableProgress=true`);
+    
+    const response = await fetch(`${baseUrl}/crm/bulkActivateLeads?enableProgress=true`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ leadIds, sessionId })
+    });
+
+    console.log('📥 Response status:', response.status, response.statusText);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Response not OK:', errorText);
+      throw new Error(`Activation failed: ${response.status} ${errorText}`);
+    }
+
+    console.log('✅ Response OK, starting to read stream...');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        console.log('🏁 SSE stream ended');
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const eventData = JSON.parse(line.substring(6));
+            console.log('📨 SSE event received:', eventData.type, '- activated:', eventData.activated, 'emailsSent:', eventData.emailsSent);
+            
+            if (onProgress) {
+              onProgress(eventData);
+            }
+            
+            if (eventData.type === 'complete') {
+              console.log('✅ Activation complete!');
+              return eventData;
+            } else if (eventData.type === 'error') {
+              console.error('❌ SSE error event:', eventData);
+              throw new Error(eventData.message || 'Failed to activate leads');
+            }
+          } catch (parseError) {
+            console.error('❌ Error parsing SSE data:', parseError, 'Line:', line);
+            throw parseError;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ activateLeadsBulkWithProgress error:', error);
+    console.error('❌ Error name:', error.name);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    throw error;
+  }
+};

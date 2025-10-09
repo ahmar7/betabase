@@ -13,6 +13,7 @@ import {
   Avatar,
   useMediaQuery,
   useTheme,
+  Badge,
 } from '@mui/material';
 import {
   ChevronLeft,
@@ -21,11 +22,12 @@ import {
   People,
   Logout,
   Menu,
+  EmailOutlined,
 } from '@mui/icons-material';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { useAuthUser, useSignOut } from "react-auth-kit";
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { logoutApi } from '../../../Api/Service';
+import { logoutApi, getFailedEmailsApi } from '../../../Api/Service';
 import { toast } from 'react-toastify';
 
 const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobileMenu }) => {
@@ -37,15 +39,44 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   
   const [drawerVariant, setDrawerVariant] = useState(isMobile ? "temporary" : "permanent");
+  const [failedEmailsCount, setFailedEmailsCount] = useState(0);
+  const [internalMobileMenu, setInternalMobileMenu] = useState(false);
+  
+  // Use internal state if setisMobileMenu not provided
+  const mobileMenuState = isMobileMenu ?? internalMobileMenu;
+  const setMobileMenuState = setisMobileMenu ?? setInternalMobileMenu;
+
+  // Fetch failed emails count for badge
+  useEffect(() => {
+    const fetchFailedEmailsCount = async () => {
+      if (user()?.user?.role === 'superadmin') {
+        try {
+          const response = await getFailedEmailsApi({ page: 1, limit: 1, status: 'pending' });
+          if (response.success) {
+            setFailedEmailsCount(response.data.pagination.total);
+          }
+        } catch (error) {
+          console.error('Error fetching failed emails count:', error);
+        }
+      }
+    };
+
+    fetchFailedEmailsCount();
+    
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchFailedEmailsCount, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   const menuItems = [
     { icon: <Dashboard />, label: 'Dashboard', link: "/admin/dashboard" },
     { icon: <People />, label: 'Leads', link: "/admin/dashboard/crm" },
   ];
 
-  // Add Recycle Bin for superadmin
+  // Add Recycle Bin and Failed Emails for superadmin
   if (user()?.user?.role === 'superadmin') {
     menuItems.push({ icon: <DeleteForeverIcon />, label: 'Recycle Bin', link: "/admin/dashboard/crm/recycle-bin" });
+    menuItems.push({ icon: <EmailOutlined />, label: 'Failed Emails', link: "/admin/crm/failed-emails", badge: true });
   }
 
   const handleLogout = async () => {
@@ -69,7 +100,9 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     const handleResize = () => {
       if (window.innerWidth >= 768) {
         setDrawerVariant("permanent");
-        setisMobileMenu(false);
+        if (setMobileMenuState) {
+          setMobileMenuState(false);
+        }
       } else {
         setDrawerVariant("temporary");
       }
@@ -79,7 +112,7 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     handleResize(); // Initialize on mount
 
     return () => window.removeEventListener('resize', handleResize);
-  }, [isMobileMenu, setisMobileMenu]);
+  }, [mobileMenuState, setMobileMenuState]);
 
   const isActiveLink = (link) => {
     return location.pathname === link;
@@ -88,8 +121,8 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
   return (
     <Drawer
       variant={drawerVariant}
-      open={isMobile ? isMobileMenu : true}
-      onClose={() => setisMobileMenu(false)}
+      open={isMobile ? mobileMenuState : true}
+      onClose={() => setMobileMenuState && setMobileMenuState(false)}
       sx={{
         width: { xs: 280, md: drawerWidth },
         flexShrink: 0,
@@ -128,7 +161,7 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
             </IconButton>
             {/* Mobile menu toggle */}
             <IconButton
-              onClick={() => setisMobileMenu(false)}
+              onClick={() => setMobileMenuState && setMobileMenuState(false)}
               size="small"
               sx={{ color: 'text.secondary', display: { xs: 'inline-flex', md: 'none' } }}
             >
@@ -146,7 +179,7 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
               <ListItemButton
                 component={Link}
                 to={item.link}
-                onClick={() => isMobile && setisMobileMenu(false)}
+                onClick={() => isMobile && setMobileMenuState && setMobileMenuState(false)}
                 sx={{
                   borderRadius: 2,
                   color: isActiveLink(item.link) ? 'primary.main' : 'text.secondary',
@@ -166,7 +199,13 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                     mr: isCollapsed ? 0 : 2,
                   }}
                 >
-                  {item.icon}
+                  {item.badge && failedEmailsCount > 0 ? (
+                    <Badge badgeContent={failedEmailsCount} color="error" max={99}>
+                      {item.icon}
+                    </Badge>
+                  ) : (
+                    item.icon
+                  )}
                 </ListItemIcon>
                 {!isCollapsed && (
                   <ListItemText
@@ -176,6 +215,9 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                       fontWeight: isActiveLink(item.link) ? 600 : 500,
                     }}
                   />
+                )}
+                {!isCollapsed && item.badge && failedEmailsCount > 0 && (
+                  <Badge badgeContent={failedEmailsCount} color="error" max={99} />
                 )}
               </ListItemButton>
             </ListItem>
