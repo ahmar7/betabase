@@ -39,7 +39,11 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Pagination,
+  InputAdornment,
+  Paper,
+  Stack
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -54,7 +58,9 @@ import {
   VerifiedUser as VerifiedIcon,
   Warning as WarningIcon,
   Support as SupportIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  Search as SearchIcon,
+  FilterList as FilterIcon
 } from '@mui/icons-material';
 import "react-responsive-modal/styles.css";
 import { Modal } from "react-responsive-modal";
@@ -508,9 +514,28 @@ const AdminUsers = () => {
   const [emailError, setEmailError] = useState("");
   const [subadminError, setSubadminError] = useState("");
 
+  // Pagination and filter states
+  const [searchInput, setSearchInput] = useState(""); // Temporary input value
+  const [searchQuery, setSearchQuery] = useState(""); // Actual search query used for API
+  const [verifiedFilter, setVerifiedFilter] = useState(""); // '', 'true', 'false'
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    pages: 1
+  });
+  const [unverifiedPagination, setUnverifiedPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    pages: 1
+  });
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
   const authUser = useAuthUser();
   const Navigate = useNavigate();
   const currentAuthUser = authUser();
+  const isSubadmin = currentAuthUser.user.role === "subadmin";
 
   // Memoize filtered subadmins
   const filteredSubadmins = useMemo(() =>
@@ -537,58 +562,126 @@ const AdminUsers = () => {
     }
   }, []);
 
-  // Optimized getAllUsers function
+  // Optimized getAllUsers function with pagination
   const [isAssignUser, setisAssignUser] = useState(false);
-  const getAllUsers = useCallback(async () => {
+  const getAllUsers = useCallback(async (isVerified = true, pageOverride = null) => {
     try {
-      const allUsers = await allUsersApi();
-
-      if (!allUsers.success) {
-        toast.error(allUsers.msg);
-        return;
-      }
-
+      setLoadingUsers(true);
       const currentUser = currentAuthUser.user;
-      const allSubadmins = allUsers.allUsers.filter(user => user.role.includes("subadmin"));
-      setSubadmins(allSubadmins);
+      
+      // For subadmin, fetch all (frontend filtering)
+      if (isSubadmin) {
+        const allUsers = await allUsersApi({});
 
-      let filtered = [];
-      let unverified = [];
+        if (!allUsers.success) {
+          toast.error(allUsers.msg);
+          return;
+        }
 
-      if (currentUser.role === "admin") {
-        const filterAdmin = allUsers.allUsers.find(user => currentUser._id === user._id);
+        const allSubadmins = allUsers.allUsers.filter(user => user.role.includes("subadmin"));
+        setSubadmins(allSubadmins);
 
-        setisAssignUser(filterAdmin?.adminPermissions?.isAddUsersToSubAdmin)
-      }
-      if (currentUser.role === "admin" || currentUser.role === "superadmin") {
-        filtered = allUsers.allUsers.filter(user =>
-          user.role.includes("user") && user.verified === true
-        );
-        unverified = allUsers.allUsers.filter(user =>
-          user.role.includes("user") && user.verified === false
-        );
-      } else if (currentUser.role === "subadmin") {
         const filterSubadmin = allUsers.allUsers.find(user => currentUser._id === user._id);
-
         setchangeNavigation(!filterSubadmin?.permissions?.editUserProfile);
 
-        filtered = allUsers.allUsers.filter(user =>
+        // Frontend filtering for subadmin
+        let filtered = allUsers.allUsers.filter(user =>
           user.role === "user" && user.verified === true &&
           (user.isShared === true || user.assignedSubAdmin === currentUser._id)
         );
 
-        unverified = allUsers.allUsers.filter(user =>
+        let unverified = allUsers.allUsers.filter(user =>
           user.role === "user" && user.verified === false &&
           (user.isShared === true || user.assignedSubAdmin === currentUser._id)
         );
+
+        // Apply search filter on frontend
+        if (searchQuery.trim()) {
+          const query = searchQuery.toLowerCase();
+          filtered = filtered.filter(user =>
+            user.firstName?.toLowerCase().includes(query) ||
+            user.lastName?.toLowerCase().includes(query) ||
+            user.email?.toLowerCase().includes(query)
+          );
+          unverified = unverified.filter(user =>
+            user.firstName?.toLowerCase().includes(query) ||
+            user.lastName?.toLowerCase().includes(query) ||
+            user.email?.toLowerCase().includes(query)
+          );
+        }
+
+        setUsers(filtered.reverse());
+        setunVerified(unverified.reverse());
+        setPagination(prev => ({ ...prev, total: filtered.length, pages: 1 }));
+        setUnverifiedPagination(prev => ({ ...prev, total: unverified.length, pages: 1 }));
+        return;
       }
 
-      setUsers(filtered.reverse());
-      setunVerified(unverified.reverse());
+      // For admin/superadmin, use backend pagination
+      const currentPage = pageOverride || (isVerified ? pagination.page : unverifiedPagination.page);
+      const currentLimit = isVerified ? pagination.limit : unverifiedPagination.limit;
+
+      const params = {
+        page: currentPage,
+        limit: currentLimit,
+        role: 'user',
+        verified: String(isVerified),
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      };
+
+      // Add search if exists
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim();
+      }
+
+      const response = await allUsersApi(params);
+
+      if (!response.success) {
+        toast.error(response.msg);
+        return;
+      }
+
+      // Also fetch subadmins on first load
+      if (isVerified && currentPage === 1) {
+        const subadminResponse = await allUsersApi({ role: 'subadmin', limit: 1000 });
+        if (subadminResponse.success) {
+          setSubadmins(subadminResponse.allUsers);
+        }
+      }
+
+      // Check admin permissions
+      if (currentUser.role === "admin" && isVerified && currentPage === 1) {
+        const filterAdmin = response.allUsers.find(user => currentUser._id === user._id) ||
+          (await allUsersApi({ search: currentUser.email, limit: 1 }))?.allUsers?.[0];
+        setisAssignUser(filterAdmin?.adminPermissions?.isAddUsersToSubAdmin);
+      }
+
+      // Update state based on verified status
+      if (isVerified) {
+        setUsers(response.allUsers);
+        setPagination({
+          page: response.pagination.page,
+          limit: response.pagination.limit,
+          total: response.pagination.total,
+          pages: response.pagination.pages
+        });
+      } else {
+        setunVerified(response.allUsers);
+        setUnverifiedPagination({
+          page: response.pagination.page,
+          limit: response.pagination.limit,
+          total: response.pagination.total,
+          pages: response.pagination.pages
+        });
+      }
     } catch (error) {
+      console.error("Error fetching users:", error);
       toast.error(error.message || "Error fetching users");
+    } finally {
+      setLoadingUsers(false);
     }
-  }, [currentAuthUser]);
+  }, [currentAuthUser, isSubadmin, pagination.page, pagination.limit, unverifiedPagination.page, unverifiedPagination.limit, searchQuery]);
 
   // Event handlers with useCallback
   const deleteEachUser = useCallback(async (user) => {
@@ -716,6 +809,42 @@ const AdminUsers = () => {
 
   const toggleBar = useCallback(() => setActive(prev => !prev), []);
 
+  // Search input handler (just updates input, doesn't trigger search)
+  const handleSearchInputChange = useCallback((e) => {
+    setSearchInput(e.target.value);
+  }, []);
+
+  // Manual search button handler
+  const handleSearchClick = useCallback(() => {
+    setSearchQuery(searchInput);
+    setPagination(prev => ({ ...prev, page: 1 }));
+    setUnverifiedPagination(prev => ({ ...prev, page: 1 }));
+  }, [searchInput]);
+
+  // Handle Enter key in search input
+  const handleSearchKeyPress = useCallback((e) => {
+    if (e.key === 'Enter') {
+      handleSearchClick();
+    }
+  }, [handleSearchClick]);
+
+  // Clear search
+  const handleClearSearch = useCallback(() => {
+    setSearchInput("");
+    setSearchQuery("");
+    setPagination(prev => ({ ...prev, page: 1 }));
+    setUnverifiedPagination(prev => ({ ...prev, page: 1 }));
+  }, []);
+
+  // Pagination handlers
+  const handleVerifiedPageChange = useCallback((event, newPage) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  }, []);
+
+  const handleUnverifiedPageChange = useCallback((event, newPage) => {
+    setUnverifiedPagination(prev => ({ ...prev, page: newPage }));
+  }, []);
+
   // Initial data loading
   useEffect(() => {
     if (currentAuthUser.user.role === "user") {
@@ -726,7 +855,10 @@ const AdminUsers = () => {
     const loadData = async () => {
       setisLoading(true);
       try {
-        await Promise.all([getAllUsers(), fetchTickets()]);
+        await fetchTickets();
+        // Load both verified and unverified users
+        await getAllUsers(true, 1);
+        await getAllUsers(false, 1);
       } catch (error) {
         console.error("Error loading data:", error);
       } finally {
@@ -735,7 +867,28 @@ const AdminUsers = () => {
     };
 
     loadData();
-  }, [currentAuthUser, Navigate, getAllUsers, fetchTickets]);
+  }, [currentAuthUser, Navigate, fetchTickets]);
+
+  // Reload users when pagination changes
+  useEffect(() => {
+    if (!isLoading) {
+      getAllUsers(true);
+    }
+  }, [pagination.page]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      getAllUsers(false);
+    }
+  }, [unverifiedPagination.page]);
+
+  // Reload users when search query changes (triggered by search button)
+  useEffect(() => {
+    if (!isLoading && searchQuery !== undefined) {
+      getAllUsers(true);
+      getAllUsers(false);
+    }
+  }, [searchQuery]);
 
   // Render loading state
   if (isLoading) {
@@ -775,18 +928,264 @@ const AdminUsers = () => {
           <div className="mx-auto w-full max-w-7xl">
             <AdminHeader toggle={toggleBar} pageName="Users Management" />
 
-            <Box sx={{ p: 3 }}>
+            <Box sx={{ px: { xs: 2, md: 4 }, py: 3 }}>
+              {/* Stats Cards Row */}
+              <Grid container spacing={3} sx={{ mb: 4 }}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a8c 100%)',
+                    border: '1px solid rgba(66, 165, 245, 0.2)',
+                    transition: 'transform 0.2s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent sx={{ p: 3 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                            Verified Users
+                          </Typography>
+                          <Typography variant="h3" fontWeight="700" sx={{ color: 'white' }}>
+                            {pagination.total}
+                          </Typography>
+                        </Box>
+                        <Avatar sx={{ width: 56, height: 56, bgcolor: 'rgba(76, 175, 80, 0.2)' }}>
+                          <VerifiedIcon sx={{ fontSize: 32, color: 'success.light' }} />
+                        </Avatar>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: 'linear-gradient(135deg, #5f3a1e 0%, #8c5a2d 100%)',
+                    border: '1px solid rgba(255, 167, 38, 0.2)',
+                    transition: 'transform 0.2s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent sx={{ p: 3 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                            Unverified Users
+                          </Typography>
+                          <Typography variant="h3" fontWeight="700" sx={{ color: 'white' }}>
+                            {unverifiedPagination.total}
+                          </Typography>
+                        </Box>
+                        <Avatar sx={{ width: 56, height: 56, bgcolor: 'rgba(255, 152, 0, 0.2)' }}>
+                          <WarningIcon sx={{ fontSize: 32, color: 'warning.light' }} />
+                        </Avatar>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: 'linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    transition: 'transform 0.2s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent sx={{ p: 3 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                            Total Users
+                          </Typography>
+                          <Typography variant="h3" fontWeight="700" sx={{ color: 'white' }}>
+                            {pagination.total + unverifiedPagination.total}
+                          </Typography>
+                        </Box>
+                        <Avatar sx={{ width: 56, height: 56, bgcolor: 'rgba(33, 150, 243, 0.2)' }}>
+                          <PersonIcon sx={{ fontSize: 32, color: 'primary.light' }} />
+                        </Avatar>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: loadingUsers 
+                      ? 'linear-gradient(135deg, #1e3a5f 0%, #2d5a8c 100%)'
+                      : searchQuery 
+                        ? 'linear-gradient(135deg, #1e5f3a 0%, #2d8c5a 100%)'
+                        : 'linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    transition: 'all 0.3s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent sx={{ p: 3 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                            {loadingUsers ? 'Loading...' : searchQuery ? 'Active Search' : 'Status'}
+                          </Typography>
+                          <Typography 
+                            variant="body1" 
+                            fontWeight="600" 
+                            sx={{ 
+                              color: 'white',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {loadingUsers ? 'Please wait' : searchQuery ? `"${searchQuery}"` : 'Ready'}
+                          </Typography>
+                        </Box>
+                        <Avatar sx={{ 
+                          width: 56, 
+                          height: 56, 
+                          bgcolor: loadingUsers ? 'rgba(33, 150, 243, 0.2)' : searchQuery ? 'rgba(76, 175, 80, 0.2)' : 'rgba(158, 158, 158, 0.2)'
+                        }}>
+                          {loadingUsers ? (
+                            <Box sx={{ 
+                              width: 32, 
+                              height: 32, 
+                              border: '3px solid rgba(255,255,255,0.3)',
+                              borderTopColor: 'white',
+                              borderRadius: '50%',
+                              animation: 'spin 1s linear infinite',
+                              '@keyframes spin': {
+                                '0%': { transform: 'rotate(0deg)' },
+                                '100%': { transform: 'rotate(360deg)' }
+                              }
+                            }} />
+                          ) : searchQuery ? (
+                            <SearchIcon sx={{ fontSize: 32, color: 'success.light' }} />
+                          ) : (
+                            <CheckIcon sx={{ fontSize: 32, color: 'grey.500' }} />
+                          )}
+                        </Avatar>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+
+              {/* Search Bar */}
+              <Paper 
+                elevation={0}
+                sx={{ 
+                  p: 2.5,
+                  mb: 4, 
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 3,
+                  backdropFilter: 'blur(10px)'
+                }}
+              >
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <TextField
+                    placeholder="Search users by name or email..."
+                    value={searchInput}
+                    onChange={handleSearchInputChange}
+                    onKeyPress={handleSearchKeyPress}
+                    size="small"
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ color: 'primary.main' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{
+                      flex: 1,
+                      minWidth: '250px',
+                      '& .MuiOutlinedInput-root': {
+                        color: 'grey.100',
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: 2,
+                        '& fieldset': {
+                          borderColor: 'rgba(255, 255, 255, 0.1)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: 'rgba(255, 255, 255, 0.2)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: 'primary.main',
+                          borderWidth: '2px'
+                        },
+                      },
+                    }}
+                  />
+                  <Button
+                    variant="contained"
+                    onClick={handleSearchClick}
+                    disabled={loadingUsers}
+                    startIcon={<SearchIcon />}
+                    sx={{
+                      px: 3,
+                      borderRadius: 2,
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      background: 'linear-gradient(45deg, #1976d2, #42a5f5)',
+                      boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
+                      '&:hover': {
+                        background: 'linear-gradient(45deg, #1565c0, #1e88e5)',
+                        boxShadow: '0 6px 16px rgba(33, 150, 243, 0.4)',
+                      },
+                      '&:disabled': {
+                        background: 'grey.800',
+                        boxShadow: 'none'
+                      }
+                    }}
+                  >
+                    Search
+                  </Button>
+                  {(searchInput || searchQuery) && (
+                    <Button
+                      variant="outlined"
+                      onClick={handleClearSearch}
+                      disabled={loadingUsers}
+                      startIcon={<CloseIcon />}
+                      sx={{
+                        px: 3,
+                        borderRadius: 2,
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        color: 'grey.300',
+                        '&:hover': {
+                          borderColor: 'rgba(255, 255, 255, 0.4)',
+                          backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                        }
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </Box>
+              </Paper>
+
               {/* Verified Users Section */}
               <Box sx={{ mb: 6 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, justifyContent: "space-between" }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <VerifiedIcon sx={{ mr: 2, fontSize: 32, color: 'success.main' }} />
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  mb: 4, 
+                  justifyContent: "space-between",
+                  pb: 3,
+                  borderBottom: '2px solid rgba(76, 175, 80, 0.3)'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Avatar sx={{ 
+                      width: 48, 
+                      height: 48, 
+                      bgcolor: 'rgba(76, 175, 80, 0.15)',
+                      border: '2px solid rgba(76, 175, 80, 0.3)'
+                    }}>
+                      <VerifiedIcon sx={{ fontSize: 28, color: 'success.main' }} />
+                    </Avatar>
                     <Box>
-                      <Typography variant="h4" fontWeight="700" gutterBottom sx={{ color: 'grey.100' }}>
+                      <Typography variant="h5" fontWeight="700" sx={{ color: 'grey.100', mb: 0.5 }}>
                         Verified Users
                       </Typography>
-                      <Typography variant="subtitle1" sx={{ color: 'grey.400' }}>
-                        {Users.length} users with verified email addresses
+                      <Typography variant="body2" sx={{ color: 'grey.400' }}>
+                        {pagination.total} user{pagination.total !== 1 ? 's' : ''} with verified email
                       </Typography>
                     </Box>
                   </Box>
@@ -817,60 +1216,252 @@ const AdminUsers = () => {
                   }
                 </Box>
 
-                <Grid container spacing={3}>
-                  {Users.map((user) => (
-                    <Grid item xs={12} sm={6} md={4} key={user._id}>
-                      <UserCard
-                        user={user}
-                        onDelete={onOpenModal}
-                        onVerify={bypassSingleUser}
-                        onUpdateShared={updateUserIsShared}
-                        onChangeNavigation={changeNavigation}
-                        userTicketsCount={userTicketsCount}
-                        subadmins={subadmins}
-                        disabledIn={disabledIn}
-                        isUsers={isUsers}
-                        authUser={currentAuthUser.user}
-                      />
+                {loadingUsers ? (
+                  <Box sx={{ width: '100%', p: 4 }}>
+                    <LinearProgress
+                      sx={{
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: 'grey.800',
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: 'success.main'
+                        }
+                      }}
+                    />
+                    <Typography variant="body1" align="center" sx={{ mt: 2, color: 'grey.300' }}>
+                      Loading verified users...
+                    </Typography>
+                  </Box>
+                ) : (
+                  <>
+                    <Grid container spacing={3}>
+                      {Users.length > 0 ? (
+                        Users.map((user) => (
+                          <Grid item xs={12} sm={6} md={4} key={user._id}>
+                            <UserCard
+                              user={user}
+                              onDelete={onOpenModal}
+                              onVerify={bypassSingleUser}
+                              onUpdateShared={updateUserIsShared}
+                              onChangeNavigation={changeNavigation}
+                              userTicketsCount={userTicketsCount}
+                              subadmins={subadmins}
+                              disabledIn={disabledIn}
+                              isUsers={isUsers}
+                              authUser={currentAuthUser.user}
+                            />
+                          </Grid>
+                        ))
+                      ) : (
+                        <Grid item xs={12}>
+                          <Box sx={{ textAlign: 'center', py: 8 }}>
+                            <PersonIcon sx={{ fontSize: 64, color: 'grey.600', mb: 2 }} />
+                            <Typography variant="h6" sx={{ color: 'grey.400' }}>
+                              No verified users found
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'grey.500', mt: 1 }}>
+                              {searchQuery ? 'Try adjusting your search query' : 'No users to display'}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      )}
                     </Grid>
-                  ))}
-                </Grid>
+
+                    {/* Pagination for Verified Users */}
+                    {!isSubadmin && pagination.total > 0 && (
+                      <Paper 
+                        elevation={0}
+                        sx={{ 
+                          mt: 4,
+                          p: 3,
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: 3
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                          <Typography variant="body2" sx={{ color: 'grey.400', fontWeight: 500 }}>
+                            Showing <Box component="span" sx={{ color: 'success.light', fontWeight: 700 }}>
+                              {((pagination.page - 1) * pagination.limit) + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)}
+                            </Box> of <Box component="span" sx={{ color: 'success.light', fontWeight: 700 }}>
+                              {pagination.total}
+                            </Box> verified users
+                          </Typography>
+                          {pagination.pages > 1 && (
+                            <Pagination
+                              count={pagination.pages}
+                              page={pagination.page}
+                              onChange={handleVerifiedPageChange}
+                              color="primary"
+                              size="medium"
+                              showFirstButton
+                              showLastButton
+                              sx={{
+                                '& .MuiPaginationItem-root': {
+                                  color: 'grey.300',
+                                  fontWeight: 600,
+                                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                                  '&:hover': {
+                                    backgroundColor: 'rgba(66, 165, 245, 0.1)',
+                                    borderColor: 'primary.main'
+                                  },
+                                  '&.Mui-selected': {
+                                    background: 'linear-gradient(45deg, #1976d2, #42a5f5)',
+                                    color: 'white',
+                                    fontWeight: 700,
+                                    border: 'none',
+                                    '&:hover': {
+                                      background: 'linear-gradient(45deg, #1565c0, #1e88e5)'
+                                    }
+                                  }
+                                }
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </Paper>
+                    )}
+                  </>
+                )}
               </Box>
 
               {/* Unverified Users Section */}
-              {unVerified.length > 0 && (
+              {(unVerified.length > 0 || unverifiedPagination.total > 0) && (
                 <Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                    <WarningIcon sx={{ mr: 2, fontSize: 32, color: 'warning.main' }} />
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    mb: 4,
+                    pb: 3,
+                    borderBottom: '2px solid rgba(255, 152, 0, 0.3)'
+                  }}>
+                    <Avatar sx={{ 
+                      width: 48, 
+                      height: 48, 
+                      bgcolor: 'rgba(255, 152, 0, 0.15)',
+                      border: '2px solid rgba(255, 152, 0, 0.3)',
+                      mr: 2
+                    }}>
+                      <WarningIcon sx={{ fontSize: 28, color: 'warning.main' }} />
+                    </Avatar>
                     <Box>
-                      <Typography variant="h4" fontWeight="700" gutterBottom sx={{ color: 'grey.100' }}>
+                      <Typography variant="h5" fontWeight="700" sx={{ color: 'grey.100', mb: 0.5 }}>
                         Unverified Users
                       </Typography>
-                      <Typography variant="subtitle1" sx={{ color: 'grey.400' }}>
-                        {unVerified.length} users pending email verification
+                      <Typography variant="body2" sx={{ color: 'grey.400' }}>
+                        {unverifiedPagination.total} user{unverifiedPagination.total !== 1 ? 's' : ''} pending email verification
                       </Typography>
                     </Box>
                   </Box>
 
-                  <Grid container spacing={3}>
-                    {unVerified.map((user) => (
-                      <Grid item xs={12} sm={6} md={4} key={user._id}>
-                        <UserCard
-                          user={user}
-                          isUnverified={true}
-                          onDelete={onOpenModal}
-                          onVerify={bypassSingleUser}
-                          onUpdateShared={updateUserIsShared}
-                          onChangeNavigation={changeNavigation}
-                          userTicketsCount={userTicketsCount}
-                          subadmins={subadmins}
-                          disabledIn={disabledIn}
-                          isUsers={isUsers}
-                          authUser={currentAuthUser.user}
-                        />
+                  {loadingUsers ? (
+                    <Box sx={{ width: '100%', p: 4 }}>
+                      <LinearProgress
+                        sx={{
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: 'grey.800',
+                          '& .MuiLinearProgress-bar': {
+                            backgroundColor: 'warning.main'
+                          }
+                        }}
+                      />
+                      <Typography variant="body1" align="center" sx={{ mt: 2, color: 'grey.300' }}>
+                        Loading unverified users...
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <>
+                      <Grid container spacing={3}>
+                        {unVerified.length > 0 ? (
+                          unVerified.map((user) => (
+                            <Grid item xs={12} sm={6} md={4} key={user._id}>
+                              <UserCard
+                                user={user}
+                                isUnverified={true}
+                                onDelete={onOpenModal}
+                                onVerify={bypassSingleUser}
+                                onUpdateShared={updateUserIsShared}
+                                onChangeNavigation={changeNavigation}
+                                userTicketsCount={userTicketsCount}
+                                subadmins={subadmins}
+                                disabledIn={disabledIn}
+                                isUsers={isUsers}
+                                authUser={currentAuthUser.user}
+                              />
+                            </Grid>
+                          ))
+                        ) : (
+                          <Grid item xs={12}>
+                            <Box sx={{ textAlign: 'center', py: 8 }}>
+                              <WarningIcon sx={{ fontSize: 64, color: 'grey.600', mb: 2 }} />
+                              <Typography variant="h6" sx={{ color: 'grey.400' }}>
+                                No unverified users found
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: 'grey.500', mt: 1 }}>
+                                {searchQuery ? 'Try adjusting your search query' : 'All users are verified'}
+                              </Typography>
+                            </Box>
+                          </Grid>
+                        )}
                       </Grid>
-                    ))}
-                  </Grid>
+
+                      {/* Pagination for Unverified Users */}
+                      {!isSubadmin && unverifiedPagination.total > 0 && (
+                        <Paper 
+                          elevation={0}
+                          sx={{ 
+                            mt: 4,
+                            p: 3,
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: 3
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                            <Typography variant="body2" sx={{ color: 'grey.400', fontWeight: 500 }}>
+                              Showing <Box component="span" sx={{ color: 'warning.light', fontWeight: 700 }}>
+                                {((unverifiedPagination.page - 1) * unverifiedPagination.limit) + 1} - {Math.min(unverifiedPagination.page * unverifiedPagination.limit, unverifiedPagination.total)}
+                              </Box> of <Box component="span" sx={{ color: 'warning.light', fontWeight: 700 }}>
+                                {unverifiedPagination.total}
+                              </Box> unverified users
+                            </Typography>
+                            {unverifiedPagination.pages > 1 && (
+                              <Pagination
+                                count={unverifiedPagination.pages}
+                                page={unverifiedPagination.page}
+                                onChange={handleUnverifiedPageChange}
+                                color="warning"
+                                size="medium"
+                                showFirstButton
+                                showLastButton
+                                sx={{
+                                  '& .MuiPaginationItem-root': {
+                                    color: 'grey.300',
+                                    fontWeight: 600,
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    '&:hover': {
+                                      backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                                      borderColor: 'warning.main'
+                                    },
+                                    '&.Mui-selected': {
+                                      background: 'linear-gradient(45deg, #f57c00, #ff9800)',
+                                      color: 'white',
+                                      fontWeight: 700,
+                                      border: 'none',
+                                      '&:hover': {
+                                        background: 'linear-gradient(45deg, #e65100, #f57c00)'
+                                      }
+                                    }
+                                  }
+                                }}
+                              />
+                            )}
+                          </Box>
+                        </Paper>
+                      )}
+                    </>
+                  )}
                 </Box>
               )}
             </Box>

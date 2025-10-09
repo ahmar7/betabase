@@ -32,8 +32,9 @@ export const logoutApi = (data) => {
   return getApi("logout", data);
 };
 
-export const allUsersApi = (data) => {
-  return getApi("allUser", data);
+export const allUsersApi = (params = {}) => {
+  const queryString = new URLSearchParams(params).toString();
+  return getApi(`allUser${queryString ? `?${queryString}` : ''}`, {});
 };
 export const getCoinsUserApi = (id) => {
   return getApi(`getCoinsUser/${id}`);

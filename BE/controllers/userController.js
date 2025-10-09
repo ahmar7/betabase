@@ -472,24 +472,110 @@ exports.logoutUser = catchAsyncErrors(async (req, res, next) => {
 });
 
 exports.allUser = catchAsyncErrors(async (req, res, next) => {
-  let signedUser = req.user
-  let allUsers = []
-  allUsers = await UserModel.find();
-  // if (signedUser.role === "subadmin") {
-  //   allUsers = await UserModel.find({
-  //     $or: [
-  //       { isShared: true },
-  //       { assignedSubAdmin: signedUser._id }
-  //     ]
-  //   });
+  let signedUser = req.user;
+  
+  // Extract pagination and filter params
+  const {
+    search,
+    role,
+    verified,
+    page = 1,
+    limit = 50,
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+    includeCounts = 'false' // For getting total counts without pagination
+  } = req.query;
 
-  // } else {
+  // For subadmins, return all users (frontend will filter)
+  if (signedUser.role === "subadmin") {
+    const allUsers = await UserModel.find({
+      $or: [
+        { isShared: true },
+        { assignedSubAdmin: signedUser._id }
+      ]
+    }).sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 });
 
-  // }
+    return res.status(200).send({
+      success: true,
+      msg: "All Users",
+      allUsers,
+      pagination: {
+        total: allUsers.length,
+        page: 1,
+        limit: allUsers.length,
+        pages: 1
+      }
+    });
+  }
+
+  // For admin/superadmin - use pagination
+  const query = {};
+
+  // Search filter (name or email)
+  if (search && search.trim()) {
+    const searchTrimmed = String(search).trim();
+    const regexGlobal = { $regex: searchTrimmed, $options: "i" };
+    query.$or = [
+      { firstName: regexGlobal },
+      { lastName: regexGlobal },
+      { email: regexGlobal }
+    ];
+  }
+
+  // Role filter
+  if (role) {
+    query.role = { $regex: role, $options: "i" };
+  }
+
+  // Verified filter
+  if (verified !== undefined && verified !== '') {
+    query.verified = verified === 'true';
+  }
+
+  // If only counts requested (for initial load)
+  if (includeCounts === 'true') {
+    const total = await UserModel.countDocuments(query);
+    const verifiedCount = await UserModel.countDocuments({ ...query, verified: true, role: /user/i });
+    const unverifiedCount = await UserModel.countDocuments({ ...query, verified: false, role: /user/i });
+    const subadminCount = await UserModel.countDocuments({ ...query, role: /subadmin/i });
+
+    return res.status(200).send({
+      success: true,
+      msg: "User counts",
+      counts: {
+        total,
+        verified: verifiedCount,
+        unverified: unverifiedCount,
+        subadmins: subadminCount
+      }
+    });
+  }
+
+  // Pagination
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  const skip = (pageNum - 1) * limitNum;
+
+  // Get total count
+  const total = await UserModel.countDocuments(query);
+
+  // Get paginated results
+  const allUsers = await UserModel.find(query)
+    .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+    .skip(skip)
+    .limit(limitNum)
+    .lean();
+
   res.status(200).send({
     success: true,
     msg: "All Users",
     allUsers,
+    pagination: {
+      total,
+      page: pageNum,
+      limit: limitNum,
+      pages: Math.ceil(total / limitNum)
+    }
   });
 });
 exports.singleUser = catchAsyncErrors(async (req, res, next) => {

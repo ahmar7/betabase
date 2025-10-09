@@ -1371,7 +1371,6 @@ const LeadsPage = () => {
             }
 
             const currentUser = authUser().user;
-            console.log('updatedCurrentUser.role: ', currentUser._id, allUsers);
 
             // Filter current user from latest data to get updated permissions
             const updatedCurrentUser = allUsers.allUsers.find(user => user._id === currentUser._id);
@@ -1664,7 +1663,6 @@ const LeadsPage = () => {
     const handleBulkActivate = async () => {
         const leadIds = Array.from(selectedLeads);
         
-        console.log('🚀 handleBulkActivate called with leadIds:', leadIds);
         
         if (leadIds.length === 0) {
             toast.warning('No leads selected');
@@ -1677,7 +1675,6 @@ const LeadsPage = () => {
 
         // Generate unique session ID
         const sessionId = `activation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        console.log('📝 Generated sessionId:', sessionId);
 
         // Initialize progress in localStorage with sessionId
         const initialProgress = {
@@ -1695,7 +1692,6 @@ const LeadsPage = () => {
             sessionId: sessionId  // Store sessionId for backend polling
         };
         
-        console.log('💾 Storing initial progress in localStorage:', initialProgress);
         localStorage.setItem('activationProgress', JSON.stringify(initialProgress));
         
         // Trigger storage event manually (for same window)
@@ -1709,14 +1705,11 @@ const LeadsPage = () => {
         
         // Verify it was stored
         const storedCheck = localStorage.getItem('activationProgress');
-        console.log('✅ Verified localStorage contains:', storedCheck);
 
         try {
-            console.log('📡 Calling activateLeadsBulkWithProgress API...');
             
             // Call API with progress tracking and sessionId
             await activateLeadsBulkWithProgress(leadIds, sessionId, (progressData) => {
-                console.log('📊 Progress update received:', progressData);
                 
                 // Update localStorage with progress
                 const updatedProgress = {
@@ -1732,10 +1725,8 @@ const LeadsPage = () => {
                     newValue: JSON.stringify(updatedProgress)
                 }));
                 
-                console.log('💾 Updated localStorage with:', updatedProgress);
             });
 
-            console.log('✅ Activation API completed successfully');
             
             // Refresh leads table
             fetchLeads(pagination.currentPage, pagination.limit);
@@ -1767,12 +1758,10 @@ const LeadsPage = () => {
                 sessionId: sessionId
             };
             localStorage.setItem('activationProgress', JSON.stringify(errorProgress));
-            console.log('💾 Stored error progress (keeping current values):', errorProgress);
             
             toast.error(error.message || 'Network error - check progress tracker');
         } finally {
             setActivating(false);
-            console.log('🏁 handleBulkActivate finished');
         }
     };
 
