@@ -19,7 +19,6 @@ exports.isAuthorizedUser = async (req, res, next) => {
     }
 
     const user = await User.findById(decoded._id);
-    console.log("🔍 Auth middleware - user from DB:", user ? { _id: user._id, email: user.email, role: user.role } : null);
 
     if (!user) {
       return next(new ErrorHandler("User not found. Please login again.", 401));
@@ -44,11 +43,8 @@ exports.isAuthorizedUser = async (req, res, next) => {
 // ✅ Role-based Access Control
 exports.authorizedRoles = (...roles) => {
   return (req, res, next) => {
-    console.log("🔍 authorizedRoles - checking user:", req.user ? { _id: req.user._id, email: req.user.email, role: req.user.role } : null);
-    console.log("🔍 authorizedRoles - allowed roles:", roles);
     
     if (!roles.includes(req.user.role)) {
-      console.log("🚨 ROLE ACCESS DENIED - User role:", req.user.role, "Allowed roles:", roles);
       return next(
         new ErrorHandler(
           `Role: ${req.user.role} is not allowed to access this resource`,
@@ -56,7 +52,6 @@ exports.authorizedRoles = (...roles) => {
         )
       );
     }
-    console.log("✅ Role access granted for:", req.user.role);
     next();
   };
 };

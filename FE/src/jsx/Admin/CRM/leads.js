@@ -1004,17 +1004,45 @@ const LeadDetails = memo(({ lead, open, onClose, navigate }) => {
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Email</Typography>
-                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1, wordBreak: 'break-all', fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, wordBreak: 'break-all', fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                             <Email fontSize="small" />
-                            {lead.email}
-                        </Typography>
+                            <Typography 
+                                component="a"
+                                href={`mailto:${lead.email}`}
+                                variant="body1"
+                                sx={{
+                                    color: "primary.main",
+                                    textDecoration: "none",
+                                    cursor: "pointer",
+                                    "&:hover": {
+                                        textDecoration: "underline"
+                                    }
+                                }}
+                            >
+                                {lead.email}
+                            </Typography>
+                        </Box>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Phone</Typography>
-                        <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center', gap: 1, wordBreak: 'break-word' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, wordBreak: 'break-word' }}>
                             <Phone fontSize="small" />
-                            {lead.phone || 'Not provided'}
-                        </Typography>
+                            <Typography 
+                                component="a"
+                                href={`tel:${lead.phone}`}
+                                variant="body1"
+                                sx={{
+                                    color: lead.phone ? "primary.main" : "text.secondary",
+                                    textDecoration: "none",
+                                    cursor: lead.phone ? "pointer" : "default",
+                                    "&:hover": {
+                                        textDecoration: lead.phone ? "underline" : "none"
+                                    }
+                                }}
+                            >
+                                {lead.phone || 'Not provided'}
+                            </Typography>
+                        </Box>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" color="text.secondary">Country</Typography>
@@ -2430,7 +2458,19 @@ const LeadsPage = () => {
                                                                 </Typography>
                                                                 <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.5 }}>
                                                                     <Email sx={{ fontSize: 16, color: "text.secondary" }} />
-                                                                    <Typography variant="caption" color="text.secondary">
+                                                                    <Typography 
+                                                                        component="a"
+                                                                        href={`mailto:${lead.email}`}
+                                                                        variant="caption" 
+                                                                        sx={{
+                                                                            color: "primary.main",
+                                                                            textDecoration: "none",
+                                                                            cursor: "pointer",
+                                                                            "&:hover": {
+                                                                                textDecoration: "underline"
+                                                                            }
+                                                                        }}
+                                                                    >
                                                                         {lead.email}
                                                                     </Typography>
                                                                 </Box>
@@ -2439,7 +2479,21 @@ const LeadsPage = () => {
                                                         <TableCell>
                                                             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                                                                 <Phone sx={{ fontSize: 16, color: "text.secondary" }} />
-                                                                <Typography variant="body2">{lead.phone}</Typography>
+                                                                <Typography 
+                                                                    component="a"
+                                                                    href={`tel:${lead.phone}`}
+                                                                    variant="body2"
+                                                                    sx={{
+                                                                        color: "primary.main",
+                                                                        textDecoration: "none",
+                                                                        cursor: "pointer",
+                                                                        "&:hover": {
+                                                                            textDecoration: "underline"
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {lead.phone}
+                                                                </Typography>
                                                             </Box>
                                                         </TableCell>
                                                         <TableCell>
@@ -2477,11 +2531,39 @@ const LeadsPage = () => {
                                                                     <Grid container spacing={2}>
                                                                         <Grid item xs={12} sm={6} md={3}>
                                                                             <Typography variant="subtitle2" color="text.secondary">Email</Typography>
-                                                                            <Typography variant="body2">{lead.email}</Typography>
+                                                                            <Typography 
+                                                                                component="a"
+                                                                                href={`mailto:${lead.email}`}
+                                                                                variant="body2"
+                                                                                sx={{
+                                                                                    color: "primary.main",
+                                                                                    textDecoration: "none",
+                                                                                    cursor: "pointer",
+                                                                                    "&:hover": {
+                                                                                        textDecoration: "underline"
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                {lead.email}
+                                                                            </Typography>
                                                                         </Grid>
                                                                         <Grid item xs={12} sm={6} md={3}>
                                                                             <Typography variant="subtitle2" color="text.secondary">Phone</Typography>
-                                                                            <Typography variant="body2">{lead.phone || 'Not provided'}</Typography>
+                                                                            <Typography 
+                                                                                component="a"
+                                                                                href={`tel:${lead.phone}`}
+                                                                                variant="body2"
+                                                                                sx={{
+                                                                                    color: lead.phone ? "primary.main" : "text.secondary",
+                                                                                    textDecoration: "none",
+                                                                                    cursor: lead.phone ? "pointer" : "default",
+                                                                                    "&:hover": {
+                                                                                        textDecoration: lead.phone ? "underline" : "none"
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                {lead.phone || 'Not provided'}
+                                                                            </Typography>
                                                                         </Grid>
                                                                         <Grid item xs={12} sm={6} md={3}>
                                                                             <Typography variant="subtitle2" color="text.secondary">Country</Typography>
