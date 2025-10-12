@@ -270,6 +270,22 @@ const getEmailQueueStatusData = async () => {
   };
 };
 
+// ✅ Cleanup stuck 'retrying' statuses on server startup
+(async () => {
+  try {
+    const result = await FailedEmail.updateMany(
+      { status: 'retrying' },
+      { $set: { status: 'pending' } }
+    );
+    
+    if (result.modifiedCount > 0) {
+      console.log(`\n🧹 Reset ${result.modifiedCount} stuck 'retrying' status(es) to 'pending'\n`);
+    }
+  } catch (err) {
+    console.error('❌ Error resetting stuck retrying statuses:', err);
+  }
+})();
+
 // ✅ Start background email queue processor (runs every 30 seconds)
 console.log('\n📧 ========================================');
 console.log('📧 Starting background email queue processor...');

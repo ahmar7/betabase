@@ -61,7 +61,8 @@ const FailedEmails = () => {
     const fetchFailedEmails = async (page = 1) => {
         try {
             setLoading(true);
-            const response = await getFailedEmailsApi({ page, limit: pagination.limit, status: 'pending' });
+            // Don't pass status - backend will show pending, retrying, permanent_failure (NOT sent)
+            const response = await getFailedEmailsApi({ page, limit: pagination.limit });
             if (response.success) {
                 setFailedEmails(response.data.emails);
                 setPagination(response.data.pagination);
@@ -269,6 +270,7 @@ const FailedEmails = () => {
                                                 </TableCell>
                                                 <TableCell><strong>Email</strong></TableCell>
                                                 <TableCell><strong>Lead Name</strong></TableCell>
+                                                <TableCell><strong>Status</strong></TableCell>
                                                 <TableCell><strong>Error Type</strong></TableCell>
                                                 <TableCell><strong>Failure Reason</strong></TableCell>
                                                 <TableCell><strong>Retry Count</strong></TableCell>
@@ -286,6 +288,17 @@ const FailedEmails = () => {
                                                     </TableCell>
                                                     <TableCell>{email.email}</TableCell>
                                                     <TableCell>{email.leadName || '-'}</TableCell>
+                                                    <TableCell>
+                                                        <Chip 
+                                                            label={email.status || 'pending'} 
+                                                            size="small"
+                                                            color={
+                                                                email.status === 'retrying' ? 'info' :
+                                                                email.status === 'permanent_failure' ? 'error' :
+                                                                'warning'
+                                                            }
+                                                        />
+                                                    </TableCell>
                                                     <TableCell>{getErrorTypeChip(email.errorType)}</TableCell>
                                                     <TableCell>
                                                         <Typography variant="caption" sx={{ maxWidth: 200, display: 'block' }}>

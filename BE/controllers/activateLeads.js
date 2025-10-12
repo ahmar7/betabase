@@ -721,28 +721,42 @@ exports.resendFailedEmails = catchAsyncErrors(async (req, res, next) => {
         // Resend emails one by one with delay
         for (const failedEmail of failedEmails) {
             try {
+                // Mark as retrying (temporary status during send attempt)
                 failedEmail.status = 'retrying';
                 failedEmail.retryCount += 1;
                 failedEmail.lastRetryAt = new Date();
                 await failedEmail.save();
                 
-                // Attempt to send
-                await sendEmail(failedEmail.email, failedEmail.subject, failedEmail.text);
-                
-                // Success! Mark as sent (will be deleted by cron after 10 days)
-                failedEmail.status = 'sent';
-                failedEmail.sentAt = new Date();
-                await failedEmail.save();
-                resent++;
-                console.log(`✅ Resent email successfully: ${failedEmail.email}`);
+                try {
+                    // Attempt to send
+                    await sendEmail(failedEmail.email, failedEmail.subject, failedEmail.text);
+                    
+                    // Success! Mark as sent (will be deleted by cron after 10 days)
+                    failedEmail.status = 'sent';
+                    failedEmail.sentAt = new Date();
+                    await failedEmail.save();
+                    resent++;
+                    console.log(`✅ Resent email successfully: ${failedEmail.email}`);
+                    
+                } catch (sendErr) {
+                    // Send failed - mark as pending again (can retry later)
+                    failedEmail.status = 'pending';
+                    failedEmail.failureReason = sendErr.message || 'Unknown error';
+                    await failedEmail.save();
+                    failed++;
+                    console.error(`❌ Resend failed: ${failedEmail.email} - ${sendErr.message}`);
+                }
                 
             } catch (err) {
+                // Error updating status - force back to pending
                 failed++;
-                // Mark as pending again (can retry later)
-                failedEmail.status = 'pending';
-                failedEmail.failureReason = err.message;
-                await failedEmail.save();
-                console.error(`❌ Resend failed: ${failedEmail.email} - ${err.message}`);
+                console.error(`❌ Critical error during resend: ${failedEmail.email} - ${err.message}`);
+                try {
+                    failedEmail.status = 'pending';
+                    await failedEmail.save();
+                } catch (saveErr) {
+                    console.error(`❌ Failed to reset status: ${saveErr.message}`);
+                }
             }
             
             // Delay between resends (20 seconds - same as batch sending)
