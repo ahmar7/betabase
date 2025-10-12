@@ -644,3 +644,8 @@ export const getEmailQueueStatusApi = () => {
 export const processEmailQueueApi = () => {
   return postApi('/crm/emailQueue/process', {});
 };
+
+// Clear email queue (superadmin only) - Fix for stuck badges
+export const clearEmailQueueApi = () => {
+  return postApi('/crm/emailQueue/clear', {});
+};

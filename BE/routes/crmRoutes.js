@@ -5,7 +5,7 @@ const { authorizedRoles, isAuthorizedUser, checkCrmAccess } = require("../middle
 const singleUpload = require("../middlewares/multer");
 const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent, getDeletedLeads, restoreLead, hardDeleteLead, bulkRestoreLeads, bulkHardDeleteLeads, restoreAllLeads, hardDeleteAllLeads } = require("../controllers/crmController");
 const { activateLead, bulkActivateLeads: bulkActivateLeadsOld, getActivationProgress, getFailedEmails, resendFailedEmails, deleteFailedEmails } = require("../controllers/activateLeads");
-const { bulkActivateLeads, getEmailQueueStatus, processEmailQueueNow } = require("../controllers/activateLeadsNew");
+const { bulkActivateLeads, getEmailQueueStatus, processEmailQueueNow, clearEmailQueue } = require("../controllers/activateLeadsNew");
 const { getLeadActivities, addLeadComment, getLeadWithActivity, editComment, deleteComment, toggleLike, togglePin, toggleImportant, addQuoteReply, addNestedReply, getCommentHistory, getNestedReplies, searchComments } = require("../controllers/activityController");
 const multer = require('multer');
 
@@ -73,6 +73,10 @@ router.route('/crm/emailQueue/status').get(isAuthorizedUser,
     authorizedRoles("superadmin", "admin"), checkCrmAccess, getEmailQueueStatus);
 router.route('/crm/emailQueue/process').post(isAuthorizedUser,
     authorizedRoles("superadmin", "admin"), checkCrmAccess, processEmailQueueNow);
+
+// Clear email queue (debug/admin only)
+router.route('/crm/emailQueue/clear').post(isAuthorizedUser,
+    authorizedRoles("superadmin"), checkCrmAccess, clearEmailQueue);
 
 // Failed emails management
 router.route('/crm/failedEmails').get(isAuthorizedUser,

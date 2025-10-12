@@ -270,5 +270,55 @@ exports.processEmailQueueNow = catchAsyncErrors(async (req, res, next) => {
     });
 });
 
+/**
+ * Clear Email Queue (debug/admin only) - Fix for stuck badges
+ */
+exports.clearEmailQueue = catchAsyncErrors(async (req, res, next) => {
+    console.log('🧹 Clearing email queue (manual admin action)...');
+    
+    // Count before clearing
+    const pendingCount = await PendingActivationEmail.countDocuments();
+    const processingCount = await PendingActivationEmail.countDocuments({ status: 'processing' });
+    const failedCount = await FailedEmail.countDocuments();
+    
+    console.log(`📊 Current queue status before clearing:`);
+    console.log(`   ├─ Pending emails: ${pendingCount}`);
+    console.log(`   ├─ Processing emails: ${processingCount}`);
+    console.log(`   └─ Failed emails: ${failedCount}`);
+    
+    // Clear pending emails (all statuses)
+    const pendingDeleted = await PendingActivationEmail.deleteMany({});
+    console.log(`🗑️ Deleted ${pendingDeleted.deletedCount} pending emails`);
+    
+    // Emit updated status immediately
+    if (global.io) {
+        const queueStatus = {
+            pending: 0,
+            processing: 0,
+            failed: failedCount, // Keep failed emails for reference
+            total: 0,
+            timestamp: new Date()
+        };
+        global.io.emit('emailQueueUpdate', queueStatus);
+        console.log(`📡 Socket.io update emitted: pending=0, processing=0, failed=${failedCount}`);
+    }
+    
+    res.json({
+        success: true,
+        msg: `✅ Cleared ${pendingDeleted.deletedCount} emails from queue. Badge should update immediately.`,
+        cleared: {
+            pending: pendingDeleted.deletedCount,
+            processing: processingCount,
+            failed: 0 // Not clearing failed emails for audit trail
+        },
+        newStatus: {
+            pending: 0,
+            processing: 0,
+            failed: failedCount,
+            total: 0
+        }
+    });
+});
+
 module.exports = exports;
 
