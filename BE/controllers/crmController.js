@@ -9,6 +9,7 @@ const crypto = require('crypto'); // For generating passwords
 const jwtToken = require('../utils/jwtToken');
 const catchAsyncErrors = require('../middlewares/catchAsyncErrors');
 const ErrorHandler = require('../utils/errorHandler');
+const { logActivity } = require('./activityController');
 
 const stream = require('stream');
 
@@ -103,6 +104,26 @@ exports.createLead = catchAsyncErrors(async (req, res, next) => {
         });
 
         await newLead.save();
+
+        // Log creation activity
+        const fieldsList = [];
+        if (firstName) fieldsList.push(`firstName: '${firstName}'`);
+        if (lastName) fieldsList.push(`lastName: '${lastName}'`);
+        if (email) fieldsList.push(`email: '${email}'`);
+        if (phone) fieldsList.push(`phone: '${phone}'`);
+        if (country) fieldsList.push(`country: '${country}'`);
+        if (Brand) fieldsList.push(`brand: '${Brand}'`);
+        if (Address) fieldsList.push(`address: '${Address}'`);
+        if (status) fieldsList.push(`status: '${status}'`);
+
+        await logActivity({
+            leadId: newLead._id,
+            type: 'created',
+            createdBy: req.user,
+            changes: {
+                description: `Lead created: ${fieldsList.join('; ')}`
+            }
+        });
 
         res.status(201).json({
             success: true,
@@ -526,8 +547,8 @@ exports.assignLeadsToAgent = async (req, res) => {
         if (!agentUser) {
             return res.status(404).json({ success: false, msg: 'Agent user not found' });
         }
-        if (!['admin', 'subadmin'].includes(agentUser.role)) {
-            return res.status(400).json({ success: false, msg: 'Agent must be an admin or subadmin' });
+        if (!['admin', 'subadmin', 'superadmin'].includes(agentUser.role)) {
+            return res.status(400).json({ success: false, msg: 'Agent must be an admin, subadmin, or superadmin' });
         }
 
         // If requester is admin, ensure they have permission and can only assign to subadmins
@@ -541,11 +562,36 @@ exports.assignLeadsToAgent = async (req, res) => {
             }
         }
 
+        // Get leads before update to track old agents
+        const leadsToUpdate = await Lead.find({ _id: { $in: leadIds }, isDeleted: false }).select('_id agent');
+
         // Update leads in bulk
         const result = await Lead.updateMany(
             { _id: { $in: leadIds }, isDeleted: false },
             { $set: { agent: agentId, updatedAt: new Date() } }
         );
+
+        // Log assignment change activities
+        for (const lead of leadsToUpdate) {
+            let oldAgentName = 'Unassigned';
+            if (lead.agent) {
+                const oldAgent = await User.findById(lead.agent).select('firstName lastName');
+                if (oldAgent) {
+                    oldAgentName = `${oldAgent.firstName} ${oldAgent.lastName}`;
+                }
+            }
+            
+            await logActivity({
+                leadId: lead._id,
+                type: 'assignment_change',
+                createdBy: req.user,
+                changes: {
+                    field: 'agent',
+                    oldValue: oldAgentName,
+                    newValue: `${agentUser.firstName} ${agentUser.lastName}`
+                }
+            });
+        }
 
         return res.status(200).json({
             success: true,
@@ -948,6 +994,20 @@ exports.editLead = async (req, res) => {
             }
         }
 
+        // Track changes for activity log
+        const changes = [];
+        if (lead.firstName !== firstName) changes.push(`firstName: from '${lead.firstName || 'N/A'}' to '${firstName}'`);
+        if (lead.lastName !== lastName) changes.push(`lastName: from '${lead.lastName || 'N/A'}' to '${lastName}'`);
+        if (lead.email !== email) changes.push(`email: from '${lead.email || 'N/A'}' to '${email}'`);
+        if (lead.phone !== phone) changes.push(`phone: from '${lead.phone || 'N/A'}' to '${phone}'`);
+        if (lead.country !== country) changes.push(`country: from '${lead.country || 'N/A'}' to '${country}'`);
+        if (lead.Brand !== Brand) changes.push(`brand: from '${lead.Brand || 'N/A'}' to '${Brand}'`);
+        if (lead.Address !== Address) changes.push(`address: from '${lead.Address || 'N/A'}' to '${Address}'`);
+        
+        // Track status change separately
+        const statusChanged = lead.status !== status;
+        const oldStatus = lead.status;
+
         // Update lead
         lead.firstName = firstName;
         lead.lastName = lastName;
@@ -959,6 +1019,31 @@ exports.editLead = async (req, res) => {
         lead.status = status;
 
         await lead.save();
+
+        // Log activities
+        if (changes.length > 0) {
+            await logActivity({
+                leadId: lead._id,
+                type: 'field_update',
+                createdBy: req.user,
+                changes: {
+                    description: changes.join('; ')
+                }
+            });
+        }
+
+        if (statusChanged) {
+            await logActivity({
+                leadId: lead._id,
+                type: 'status_change',
+                createdBy: req.user,
+                changes: {
+                    field: 'status',
+                    oldValue: oldStatus,
+                    newValue: status
+                }
+            });
+        }
 
         res.status(200).json({
             success: true,

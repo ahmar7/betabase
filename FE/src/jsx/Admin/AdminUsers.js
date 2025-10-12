@@ -660,6 +660,7 @@ const AdminUsers = () => {
       // Update state based on verified status
       if (isVerified) {
         setUsers(response.allUsers);
+        console.log("response.allUsers",response.allUsers)
         setPagination({
           page: response.pagination.page,
           limit: response.pagination.limit,

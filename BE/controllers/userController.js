@@ -486,8 +486,50 @@ exports.allUser = catchAsyncErrors(async (req, res, next) => {
     includeCounts = 'false' // For getting total counts without pagination
   } = req.query;
 
-  // For subadmins, return all users (frontend will filter)
+  // For subadmins, handle search parameter or return filtered users
   if (signedUser.role === "subadmin") {
+    console.log("🔍 Subadmin request - search:", search);
+    
+    // ✅ If searching by ID, find that specific user
+    if (search && search.trim()) {
+      const searchTrimmed = String(search).trim();
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(searchTrimmed);
+      
+      if (isObjectId) {
+        console.log("🔍 Subadmin searching by ID:", searchTrimmed);
+        const specificUser = await UserModel.findById(searchTrimmed).lean();
+        
+        if (specificUser) {
+          console.log("🔍 Found specific user:", { _id: specificUser._id, email: specificUser.email, role: specificUser.role });
+          return res.status(200).send({
+            success: true,
+            msg: "All Users",
+            allUsers: [specificUser],
+            pagination: {
+              total: 1,
+              page: 1,
+              limit: 1,
+              pages: 1
+            }
+          });
+        } else {
+          console.log("🔍 Specific user not found");
+          return res.status(200).send({
+            success: true,
+            msg: "All Users", 
+            allUsers: [],
+            pagination: {
+              total: 0,
+              page: 1,
+              limit: 0,
+              pages: 0
+            }
+          });
+        }
+      }
+    }
+    
+    // ✅ Default subadmin behavior - return all accessible users
     const allUsers = await UserModel.find({
       $or: [
         { isShared: true },
@@ -495,6 +537,18 @@ exports.allUser = catchAsyncErrors(async (req, res, next) => {
       ]
     }).sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 });
 
+    // ✅ Append the logged-in subadmin user to ensure they can find their own permissions data
+    const userExists = allUsers.some(user => user._id.toString() === signedUser._id.toString());
+    
+    if (!userExists) {
+      // Fetch the logged-in user's latest data only if they're a subadmin
+      const currentUser = await UserModel.findById(signedUser._id).lean();
+      if (currentUser && currentUser.role === 'subadmin') {
+        allUsers.push(currentUser);  // Append subadmin to array
+      }
+    }
+
+    console.log("🔍 Subadmin returning", allUsers.length, "users");
     return res.status(200).send({
       success: true,
       msg: "All Users",
@@ -511,20 +565,30 @@ exports.allUser = catchAsyncErrors(async (req, res, next) => {
   // For admin/superadmin - use pagination
   const query = {};
 
-  // Search filter (name or email)
+  // Search filter (name, email, or ID)
   if (search && search.trim()) {
     const searchTrimmed = String(search).trim();
-    const regexGlobal = { $regex: searchTrimmed, $options: "i" };
-    query.$or = [
-      { firstName: regexGlobal },
-      { lastName: regexGlobal },
-      { email: regexGlobal }
-    ];
+    
+    // Check if search is a valid MongoDB ObjectId (24 hex characters)
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(searchTrimmed);
+    
+    if (isObjectId) {
+      // Search by exact ID match
+      query._id = searchTrimmed;
+    } else {
+      // Search by name or email (regex)
+      const regexGlobal = { $regex: searchTrimmed, $options: "i" };
+      query.$or = [
+        { firstName: regexGlobal },
+        { lastName: regexGlobal },
+        { email: regexGlobal }
+      ];
+    }
   }
 
   // Role filter
   if (role) {
-    query.role = { $regex: role, $options: "i" };
+    query.role = role; // Exact match instead of regex
   }
 
   // Verified filter
@@ -565,6 +629,25 @@ exports.allUser = catchAsyncErrors(async (req, res, next) => {
     .skip(skip)
     .limit(limitNum)
     .lean();
+
+  // ✅ SECURITY: Only append logged-in user if NOT searching by ID (to avoid duplicates)
+  const isSearchingById = search && search.trim() && /^[0-9a-fA-F]{24}$/.test(search.trim());
+  const userExists = allUsers.some(user => user._id.toString() === signedUser._id.toString());
+  
+  if (!userExists && !isSearchingById) {
+    // Fetch the logged-in user's latest data
+    const currentUser = await UserModel.findById(signedUser._id).lean();
+    
+    // Only append if user matches the role filter (or no role filter)
+    if (currentUser) {
+      const matchesRoleFilter = !role || currentUser.role === role; // Exact match
+      const matchesVerifiedFilter = verified === undefined || verified === '' || currentUser.verified === (verified === 'true');
+      
+      if (matchesRoleFilter && matchesVerifiedFilter) {
+        allUsers.push(currentUser);  // Append only if matches filters
+      }
+    }
+  }
 
   res.status(200).send({
     success: true,

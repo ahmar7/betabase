@@ -57,34 +57,40 @@ const AdminSubAdmin = () => {
 
   const getAllUsers = async () => {
     try {
-      const allUsers = await allUsersApi();
+      // Fetch subadmins with role filter
+      const subadminParams = { role: 'subadmin', limit: 1000 };
+      const subadminsResponse = await allUsersApi(subadminParams);
 
-      if (allUsers.success) {
+      // Fetch all regular users to calculate counts
+      const usersParams = { role: 'user', limit: 10000 };
+      const usersResponse = await allUsersApi(usersParams);
+
+      if (subadminsResponse.success && usersResponse.success) {
         let filtered;
         let unverified;
 
         if (authUser().user.role === "admin" || authUser().user.role === "superadmin") {
-          filtered = allUsers.allUsers.filter((user) => {
+          filtered = subadminsResponse.allUsers.filter((user) => {
             return user.role.includes("subadmin") && user.verified === true;
           });
-          unverified = allUsers.allUsers.filter((user) => {
+          unverified = subadminsResponse.allUsers.filter((user) => {
             return user.role.includes("subadmin") && user.verified === false;
           });
 
-          // Calculate user counts for each subadmin
+          // Calculate user counts for each subadmin using all users
           const dedicatedCounts = {};
           const sharedCounts = {};
           const totalCounts = {};
 
           // First count dedicated users
-          allUsers.allUsers.forEach(user => {
+          usersResponse.allUsers.forEach(user => {
             if (user.assignedSubAdmin && !user.isShared) {
               dedicatedCounts[user.assignedSubAdmin] = (dedicatedCounts[user.assignedSubAdmin] || 0) + 1;
             }
           });
 
           // Count shared users (same count for all subadmins)
-          const sharedUserCount = allUsers.allUsers.filter(user => user.isShared).length;
+          const sharedUserCount = usersResponse.allUsers.filter(user => user.isShared).length;
           const subadminIds = [...filtered, ...unverified].map(subadmin => subadmin._id);
 
           subadminIds.forEach(subadminId => {
@@ -102,7 +108,7 @@ const AdminSubAdmin = () => {
         setunVerified(unverified.reverse());
       } else {
         toast.dismiss();
-        toast.error(allUsers.msg);
+        toast.error(subadminsResponse.msg || "Failed to fetch subadmins");
       }
     } catch (error) {
       toast.dismiss();

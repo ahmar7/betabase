@@ -40,7 +40,10 @@ leadSchema.index({ agent: 1, isDeleted: 1 }); // For filtering by agent
 leadSchema.index({ status: 1 }); // For filtering by status
 leadSchema.index({ createdAt: -1 }); // For sorting by date
 
-module.exports = async () => {
+const getLeadModel = async () => {
   const crmDB = await connectCRMDatabase();
   return crmDB.model("Lead", leadSchema);
 };
+
+module.exports = getLeadModel;
+module.exports.getLeadModel = getLeadModel;

@@ -27,8 +27,9 @@ import {
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { useAuthUser, useSignOut } from "react-auth-kit";
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { logoutApi, getFailedEmailsApi } from '../../../Api/Service';
+import { logoutApi, getEmailQueueStatusApi } from '../../../Api/Service';
 import { toast } from 'react-toastify';
+import io from 'socket.io-client';
 
 const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobileMenu }) => {
   const user = useAuthUser();
@@ -39,33 +40,46 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   
   const [drawerVariant, setDrawerVariant] = useState(isMobile ? "temporary" : "permanent");
-  const [failedEmailsCount, setFailedEmailsCount] = useState(0);
+  const [emailQueueCount, setEmailQueueCount] = useState(0);
   const [internalMobileMenu, setInternalMobileMenu] = useState(false);
   
   // Use internal state if setisMobileMenu not provided
   const mobileMenuState = isMobileMenu ?? internalMobileMenu;
   const setMobileMenuState = setisMobileMenu ?? setInternalMobileMenu;
 
-  // Fetch failed emails count for badge
+  // ✅ Socket.io for real-time email queue updates
   useEffect(() => {
-    const fetchFailedEmailsCount = async () => {
-      if (user()?.user?.role === 'superadmin') {
-        try {
-          const response = await getFailedEmailsApi({ page: 1, limit: 1, status: 'pending' });
-          if (response.success) {
-            setFailedEmailsCount(response.data.pagination.total);
-          }
-        } catch (error) {
-          console.error('Error fetching failed emails count:', error);
-        }
-      }
-    };
+    if (user()?.user?.role !== 'superadmin') return;
 
-    fetchFailedEmailsCount();
-    
-    // Refresh count every 30 seconds
-    const interval = setInterval(fetchFailedEmailsCount, 30000);
-    return () => clearInterval(interval);
+    // Connect to Socket.io
+    const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:4000', {
+      withCredentials: true
+    });
+
+    socket.on('connect', () => {
+      console.log('🔌 Sidebar connected to Socket.io');
+    });
+
+    // Listen for email queue updates
+    socket.on('emailQueueUpdate', (data) => {
+      console.log('📧 Sidebar received email queue update:', data);
+      const totalCount = (data.pending || 0) + (data.failed || 0);
+      setEmailQueueCount(totalCount);
+    });
+
+    // Fetch initial status
+    getEmailQueueStatusApi().then(response => {
+      if (response.success) {
+        const totalCount = (response.data.pending || 0) + (response.data.failed || 0);
+        setEmailQueueCount(totalCount);
+      }
+    }).catch(err => {
+      console.error('Error fetching email queue status:', err);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [user]);
 
   const menuItems = [
@@ -73,10 +87,10 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     { icon: <People />, label: 'Leads', link: "/admin/dashboard/crm" },
   ];
 
-  // Add Recycle Bin and Failed Emails for superadmin
+  // Add Recycle Bin and Email Queue for superadmin
   if (user()?.user?.role === 'superadmin') {
     menuItems.push({ icon: <DeleteForeverIcon />, label: 'Recycle Bin', link: "/admin/dashboard/crm/recycle-bin" });
-    menuItems.push({ icon: <EmailOutlined />, label: 'Failed Emails', link: "/admin/crm/failed-emails", badge: true });
+    menuItems.push({ icon: <EmailOutlined />, label: 'Email Queue', link: "/admin/crm/email-queue", badge: true });
   }
 
   const handleLogout = async () => {
@@ -199,8 +213,8 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                     mr: isCollapsed ? 0 : 2,
                   }}
                 >
-                  {item.badge && failedEmailsCount > 0 ? (
-                    <Badge badgeContent={failedEmailsCount} color="error" max={99}>
+                  {item.badge && emailQueueCount > 0 ? (
+                    <Badge badgeContent={emailQueueCount} color="warning" max={99}>
                       {item.icon}
                     </Badge>
                   ) : (
@@ -216,8 +230,8 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                     }}
                   />
                 )}
-                {!isCollapsed && item.badge && failedEmailsCount > 0 && (
-                  <Badge badgeContent={failedEmailsCount} color="error" max={99} />
+                {!isCollapsed && item.badge && emailQueueCount > 0 && (
+                  <Badge badgeContent={emailQueueCount} color="warning" max={99} />
                 )}
               </ListItemButton>
             </ListItem>

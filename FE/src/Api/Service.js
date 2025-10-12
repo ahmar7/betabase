@@ -504,20 +504,79 @@ export const deleteFailedEmailsApi = (emailIds) => {
   return postApi(`/crm/failedEmails/delete`, { emailIds });
 };
 
-// Activate bulk leads with progress tracking (SSE)
-export const activateLeadsBulkWithProgress = async (leadIds, sessionId, onProgress) => {
-  console.log('📡 activateLeadsBulkWithProgress called with:', { leadIds: leadIds.length, sessionId });
+// Activity/Stream APIs
+export const getLeadStreamApi = (leadId) => {
+  return getApi(`/crm/lead/${leadId}/stream`);
+};
+
+export const getLeadActivitiesApi = (leadId, params = {}) => {
+  const queryString = new URLSearchParams(params).toString();
+  return getApi(`/crm/lead/${leadId}/activities?${queryString}`);
+};
+
+export const getLeadWithActivityApi = (leadId) => {
+  return getApi(`/crm/leads/${leadId}/stream`);
+};
+
+export const addLeadCommentApi = (leadId, comment) => {
+  return postApi(`/crm/lead/${leadId}/comment`, { comment });
+};
+
+// ✅ NEW: Enhanced Comment Features
+export const editCommentApi = (leadId, commentId, content, editReason) => {
+  return patchApi(`/crm/lead/${leadId}/comment/${commentId}/edit`, { content, editReason });
+};
+
+export const deleteCommentApi = (leadId, commentId) => {
+  return deleteApi(`/crm/lead/${leadId}/comment/${commentId}/delete`);
+};
+
+export const toggleLikeCommentApi = (leadId, commentId) => {
+  return postApi(`/crm/lead/${leadId}/comment/${commentId}/like`, {});
+};
+
+export const togglePinCommentApi = (leadId, commentId) => {
+  return postApi(`/crm/lead/${leadId}/comment/${commentId}/pin`, {});
+};
+
+export const toggleImportantCommentApi = (leadId, commentId) => {
+  return postApi(`/crm/lead/${leadId}/comment/${commentId}/important`, {});
+};
+
+export const addQuoteReplyApi = (leadId, commentId, content) => {
+  return postApi(`/crm/lead/${leadId}/comment/${commentId}/quote-reply`, { content });
+};
+
+export const addNestedReplyApi = (leadId, commentId, content) => {
+  return postApi(`/crm/lead/${leadId}/comment/${commentId}/reply`, { content });
+};
+
+export const getCommentHistoryApi = (leadId, commentId) => {
+  return getApi(`/crm/lead/${leadId}/comment/${commentId}/history`);
+};
+
+export const getNestedRepliesApi = (leadId, commentId) => {
+  return getApi(`/crm/lead/${leadId}/comment/${commentId}/replies`);
+};
+
+export const searchCommentsApi = (leadId, params = {}) => {
+  const queryString = new URLSearchParams(params).toString();
+  return getApi(`/crm/lead/${leadId}/comments/search?${queryString}`);
+};
+
+// Activate bulk leads with progress tracking (SSE) - NEW APPROACH
+// This ONLY creates users, emails are queued for background processing
+export const activateLeadsBulkWithProgress = async (leadIds, onProgress) => {
+  console.log('📡 activateLeadsBulkWithProgress called with:', { leadIds: leadIds.length });
   
   try {
-    console.log('🌐 Fetching:', `${baseUrl}/crm/bulkActivateLeads?enableProgress=true`);
-    
-    const response = await fetch(`${baseUrl}/crm/bulkActivateLeads?enableProgress=true`, {
+    const response = await fetch(`${baseUrl}/crm/bulkActivateLeads`, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ leadIds, sessionId })
+      body: JSON.stringify({ leadIds })
     });
 
     console.log('📥 Response status:', response.status, response.statusText);
@@ -550,14 +609,14 @@ export const activateLeadsBulkWithProgress = async (leadIds, sessionId, onProgre
         if (line.startsWith('data: ')) {
           try {
             const eventData = JSON.parse(line.substring(6));
-            console.log('📨 SSE event received:', eventData.type, '- activated:', eventData.activated, 'emailsSent:', eventData.emailsSent);
+            console.log('📨 SSE event received:', eventData.type, '- activated:', eventData.activated);
             
             if (onProgress) {
               onProgress(eventData);
             }
             
             if (eventData.type === 'complete') {
-              console.log('✅ Activation complete!');
+              console.log('✅ User creation complete!');
               return eventData;
             } else if (eventData.type === 'error') {
               console.error('❌ SSE error event:', eventData);
@@ -572,9 +631,16 @@ export const activateLeadsBulkWithProgress = async (leadIds, sessionId, onProgre
     }
   } catch (error) {
     console.error('❌ activateLeadsBulkWithProgress error:', error);
-    console.error('❌ Error name:', error.name);
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error stack:', error.stack);
     throw error;
   }
+};
+
+// Get email queue status
+export const getEmailQueueStatusApi = () => {
+  return getApi('/crm/emailQueue/status');
+};
+
+// Trigger email queue processing manually
+export const processEmailQueueApi = () => {
+  return postApi('/crm/emailQueue/process', {});
 };

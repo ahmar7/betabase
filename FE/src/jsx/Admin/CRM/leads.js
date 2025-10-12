@@ -98,14 +98,15 @@ import {
     assignLeadsApi,
     activateLeadApi,
     activateLeadsBulkApi,
-    activateLeadsBulkWithProgress
+    activateLeadsBulkWithProgress,
+    getEmailQueueStatusApi
 } from "../../../Api/Service";
 import { toast } from "react-toastify";
 import Sidebar from "./Sidebar.js";
 import { useNavigate } from "react-router-dom";
 import { useAuthUser } from "react-auth-kit";
-import ActivationProgressTracker from "../../components/ActivationProgressTracker";
 import { debounce } from "../../../utils/debounce";
+import io from 'socket.io-client';
 
 // ... (Field mapping configuration and CreateLeadDialog component remain the same)
 // Field mapping configuration based on updated schema
@@ -967,8 +968,13 @@ const CreateLeadDialog = memo(({ open, onClose, onLeadCreated, agents, currentUs
 });
 
 // View Details Component - Memoized for performance
-const LeadDetails = memo(({ lead, open, onClose }) => {
+const LeadDetails = memo(({ lead, open, onClose, navigate }) => {
     if (!lead) return null;
+
+    const handleViewStream = () => {
+        onClose();
+        navigate(`/admin/crm/lead/${lead._id}/stream`);
+    };
 
     return (
         <Dialog 
@@ -1069,6 +1075,13 @@ const LeadDetails = memo(({ lead, open, onClose }) => {
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Close</Button>
+                <Button 
+                    variant="contained" 
+                    onClick={handleViewStream}
+                    startIcon={<Visibility />}
+                >
+                    View Stream
+                </Button>
             </DialogActions>
         </Dialog>
     );
@@ -1348,9 +1361,25 @@ const LeadsPage = () => {
     const [deleting, setDeleting] = useState(false);
     const [activating, setActivating] = useState(false); // Track activation state
     const [activateConfirmOpen, setActivateConfirmOpen] = useState(false); // Confirmation dialog
+    const [activationModalOpen, setActivationModalOpen] = useState(false); // Blocking modal for activation
+    const [activationProgress, setActivationProgress] = useState({
+        total: 0,
+        activated: 0,
+        skipped: 0,
+        failed: 0,
+        percentage: 0,
+        msg: 'Starting...',
+        completed: false
+    });
     const [assignDialogOpen, setAssignDialogOpen] = useState(false);
     const [assigning, setAssigning] = useState(false);
     const [selectedAgentId, setSelectedAgentId] = useState("");
+    const [emailQueueStatus, setEmailQueueStatus] = useState({
+        pending: 0,
+        processing: 0,
+        failed: 0,
+        total: 0
+    });
     const [deleteProgress, setDeleteProgress] = useState({
         total: 0,
         deleted: 0,
@@ -1359,38 +1388,83 @@ const LeadsPage = () => {
         msg: ''
     });
 
+    // ✅ Socket.io connection for real-time email queue updates
+    useEffect(() => {
+        const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:4000', {
+            withCredentials: true
+        });
+
+        socket.on('connect', () => {
+            console.log('🔌 Connected to Socket.io');
+        });
+
+        socket.on('emailQueueUpdate', (data) => {
+            console.log('📧 Email queue update:', data);
+            setEmailQueueStatus({
+                pending: data.pending || 0,
+                processing: data.processing || 0,
+                failed: data.failed || 0,
+                total: data.total || 0
+            });
+        });
+
+        socket.on('disconnect', () => {
+            console.log('🔌 Disconnected from Socket.io');
+        });
+
+        // Fetch initial status
+        getEmailQueueStatusApi().then(response => {
+            if (response.success) {
+                setEmailQueueStatus({
+                    pending: response.data.pending || 0,
+                    processing: response.data.processing || 0,
+                    failed: response.data.failed || 0,
+                    total: response.data.total || 0
+                });
+            }
+        }).catch(err => {
+            console.error('Error fetching email queue status:', err);
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, []);
+
     // Toggle sidebar
     const currentAuthUser = authUser();
     const getAllUsers = useCallback(async () => {
         try {
-            const allUsers = await allUsersApi();
-
-            if (!allUsers.success) {
-                toast.error(allUsers.msg);
-                return;
-            }
-
             const currentUser = authUser().user;
+            console.log("🔍 Current logged-in user:", currentUser);
 
-            // Filter current user from latest data to get updated permissions
-            const updatedCurrentUser = allUsers.allUsers.find(user => user._id === currentUser._id);
-            setCurrentUserLatest(updatedCurrentUser);
+            // Fetch current user's latest data (with their own role to get permissions)
+            console.log("🔍 Searching for user ID:", currentUser._id);
+            // ✅ SECURITY: Fetch current user's latest data BY ID (not email to avoid duplicates)
+            const currentUserResponse = await allUsersApi({ 
+                search: currentUser._id,  // Search by ID instead of email!
+                limit: 1 
+            });
+            console.log("🔍 Search response:", currentUserResponse);
 
-            if (!updatedCurrentUser) {
-                toast.error("User not found");
+            if (!currentUserResponse.success || currentUserResponse.allUsers.length === 0) {
+                toast.error("Failed to fetch user data");
+                setCurrentUserLatest(currentUser);
                 return;
             }
+
+            const updatedCurrentUser = currentUserResponse.allUsers[0];
+            console.log("✅ updatedCurrentUser found:", updatedCurrentUser);
+            setCurrentUserLatest(updatedCurrentUser);
 
             // Check CRM access permissions and redirect if false
             if (updatedCurrentUser.role === "admin") {
                 if (!updatedCurrentUser.adminPermissions?.accessCrm) {
-                    // Redirect admin to dashboard if no CRM access
                     navigate("/admin/dashboard");
                     return;
                 }
             } else if (updatedCurrentUser.role === "subadmin") {
                 if (!updatedCurrentUser.permissions?.accessCrm) {
-                    // Redirect subadmin to dashboard if no CRM access
                     navigate("/admin/dashboard");
                     return;
                 }
@@ -1398,17 +1472,31 @@ const LeadsPage = () => {
 
             let agents = []; // Initialize agents array
 
-            // Set agents based on user role and permissions
+            // Fetch agents based on user role and permissions
             if (updatedCurrentUser.role === "superadmin") {
-                agents = allUsers.allUsers.filter(user =>
-                    user.role.includes("admin") ||
-                    user.role.includes("superadmin") ||
-                    user.role.includes("subadmin")
-                );
+                // Superadmin can see all admins, subadmins, and superadmins
+                const [adminsResponse, subadminsResponse] = await Promise.all([
+                    allUsersApi({ role: 'admin', limit: 1000 }),
+                    allUsersApi({ role: 'subadmin', limit: 1000 })
+                ]);
+
+                const allFetchedAgents = [
+                    ...(adminsResponse.success ? adminsResponse.allUsers : []),
+                    ...(subadminsResponse.success ? subadminsResponse.allUsers : [])
+                ];
+
+                // ✅ DEDUPLICATION: Check if current user already exists in fetched agents
+                const currentUserExists = allFetchedAgents.some(agent => agent._id === updatedCurrentUser._id);
+                
+                agents = currentUserExists 
+                    ? allFetchedAgents 
+                    : [...allFetchedAgents, updatedCurrentUser]; // Include self only if not already present
+                    
             } else if (updatedCurrentUser.role === "admin") {
                 // Admin: can assign only if allowed, and targets restricted to subadmins
                 if (updatedCurrentUser.adminPermissions?.canManageCrmLeads) {
-                    agents = allUsers.allUsers.filter(user => user.role === "subadmin");
+                    const subadminsResponse = await allUsersApi({ role: 'subadmin', limit: 1000 });
+                    agents = subadminsResponse.success ? subadminsResponse.allUsers : [];
                 } else {
                     agents = [];
                 }
@@ -1421,11 +1509,11 @@ const LeadsPage = () => {
         } catch (error) {
             toast.error(error.message || "Error fetching users");
         }
-    }, []);
+    }, []); // ✅ EMPTY dependencies - only run once on mount
     
     useEffect(() => {
         getAllUsers();
-    }, [getAllUsers]);
+    }, []); // ✅ EMPTY dependencies - only call getAllUsers once on mount
     const [agents, setAgents] = useState([]);
     const [currentUserLatest, setCurrentUserLatest] = useState(null);
 
@@ -1663,7 +1751,6 @@ const LeadsPage = () => {
     const handleBulkActivate = async () => {
         const leadIds = Array.from(selectedLeads);
         
-        
         if (leadIds.length === 0) {
             toast.warning('No leads selected');
             return;
@@ -1671,97 +1758,61 @@ const LeadsPage = () => {
 
         // Close confirmation dialog
         setActivateConfirmOpen(false);
-        setActivating(true);
-
-        // Generate unique session ID
-        const sessionId = `activation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-        // Initialize progress in localStorage with sessionId
-        const initialProgress = {
+        
+        // Open blocking modal
+        setActivationModalOpen(true);
+        setActivationProgress({
             total: leadIds.length,
             activated: 0,
             skipped: 0,
             failed: 0,
-            emailsSent: 0,
-            emailsFailed: 0,
-            emailsPending: 0,
             percentage: 0,
-            msg: `Starting activation of ${leadIds.length} leads...`,
-            completed: false,
-            type: 'start',
-            sessionId: sessionId  // Store sessionId for backend polling
-        };
-        
-        localStorage.setItem('activationProgress', JSON.stringify(initialProgress));
-        
-        // Trigger storage event manually (for same window)
-        window.dispatchEvent(new StorageEvent('storage', {
-            key: 'activationProgress',
-            newValue: JSON.stringify(initialProgress),
-            oldValue: null,
-            url: window.location.href,
-            storageArea: localStorage
-        }));
-        
-        // Verify it was stored
-        const storedCheck = localStorage.getItem('activationProgress');
+            msg: 'Starting user creation...',
+            completed: false
+        });
 
         try {
-            
-            // Call API with progress tracking and sessionId
-            await activateLeadsBulkWithProgress(leadIds, sessionId, (progressData) => {
-                
-                // Update localStorage with progress
-                const updatedProgress = {
-                    ...progressData,
-                    sessionId: sessionId,  // Ensure sessionId is always present
-                    completedAt: progressData.type === 'complete' || progressData.completed ? Date.now() : undefined
-                };
-                localStorage.setItem('activationProgress', JSON.stringify(updatedProgress));
-                
-                // Trigger storage event manually
-                window.dispatchEvent(new StorageEvent('storage', {
-                    key: 'activationProgress',
-                    newValue: JSON.stringify(updatedProgress)
-                }));
-                
+            // Call API with progress callback - NO localStorage, NO sessionId!
+            const result = await activateLeadsBulkWithProgress(leadIds, (progressData) => {
+                // Update modal progress in real-time
+                setActivationProgress({
+                    total: progressData.total || leadIds.length,
+                    activated: progressData.activated || 0,
+                    skipped: progressData.skipped || 0,
+                    failed: progressData.failed || 0,
+                    percentage: progressData.percentage || 0,
+                    msg: progressData.msg || 'Processing...',
+                    completed: progressData.completed || false
+                });
             });
 
+            // Close modal
+            setActivationModalOpen(false);
             
             // Refresh leads table
             fetchLeads(pagination.currentPage, pagination.limit);
             setSelectedLeads(new Set()); // Clear selection
 
-            toast.success('Bulk activation completed!');
+            // Show success toast with email info
+            const emailsQueued = result.emailsQueued || result.activated || 0;
+            toast.success(
+                `✅ ${result.activated} users created successfully! ${emailsQueued > 0 ? `${emailsQueued} welcome emails are being sent in the background.` : ''}`,
+                { autoClose: 6000 }
+            );
+            
+            if (emailsQueued > 0) {
+                setTimeout(() => {
+                    toast.info(
+                        '📧 Check the Email Queue page to monitor email sending progress.',
+                        { autoClose: 5000 }
+                    );
+                }, 1000);
+            }
+
         } catch (error) {
             console.error('❌ Bulk activation error:', error);
-            
-            // Get current progress from localStorage (don't overwrite with 0s!)
-            const currentStored = localStorage.getItem('activationProgress');
-            let currentProgress = initialProgress;
-            
-            if (currentStored) {
-                try {
-                    currentProgress = JSON.parse(currentStored);
-                } catch (e) {
-                    console.error('Failed to parse current progress:', e);
-                }
-            }
-            
-            // Update localStorage with error BUT keep current values
-            const errorProgress = {
-                ...currentProgress,  // Keep current values (NOT initialProgress with 0s!)
-                completed: true,
-                type: 'error',
-                msg: error.message || 'Network error - activation may still be processing',
-                completedAt: Date.now(),
-                sessionId: sessionId
-            };
-            localStorage.setItem('activationProgress', JSON.stringify(errorProgress));
-            
-            toast.error(error.message || 'Network error - check progress tracker');
-        } finally {
-            setActivating(false);
+            setActivationModalOpen(false);
+            toast.error(error.message || 'Failed to activate leads');
         }
     };
 
@@ -2363,7 +2414,18 @@ const LeadsPage = () => {
                                                         </TableCell>
                                                         <TableCell>
                                                             <Box>
-                                                                <Typography variant="body2" fontWeight="bold">
+                                                                <Typography 
+                                                                    variant="body2" 
+                                                                    fontWeight="bold"
+                                                                    onClick={() => navigate(`/admin/crm/lead/${lead._id}/stream`)}
+                                                                    sx={{
+                                                                        cursor: 'pointer',
+                                                                        color: 'primary.main',
+                                                                        '&:hover': {
+                                                                            textDecoration: 'underline'
+                                                                        }
+                                                                    }}
+                                                                >
                                                                     {lead.firstName} {lead.lastName}
                                                                 </Typography>
                                                                 <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.5 }}>
@@ -2674,6 +2736,7 @@ const LeadsPage = () => {
                 lead={selectedLead}
                 open={viewDetailsOpen}
                 onClose={() => setViewDetailsOpen(false)}
+                navigate={navigate}
             />
 
             {/* Edit Lead Dialog */}
@@ -2782,13 +2845,13 @@ const LeadsPage = () => {
                             <strong>This will:</strong>
                         </Typography>
                         <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                            <li>Create user accounts for each lead</li>
+                            <li>Create user accounts for each lead (fast - ~30 seconds)</li>
                             <li>Generate random passwords</li>
-                            <li>Send welcome emails with credentials</li>
+                            <li>Queue welcome emails for background sending</li>
                         </ul>
                     </Alert>
                     <Typography variant="body2" color="text.secondary">
-                        ℹ️ You can track the progress in real-time. The process will continue even if you refresh the page.
+                        ℹ️ User creation is fast! After completion, emails will be sent in the background automatically.
                     </Typography>
                 </DialogContent>
                 <DialogActions>
@@ -2881,8 +2944,91 @@ const LeadsPage = () => {
                 </DialogActions>
             </Dialog>
 
-            {/* Persistent Activation Progress Tracker */}
-            <ActivationProgressTracker />
+            {/* Blocking Activation Modal */}
+            <Dialog
+                open={activationModalOpen}
+                onClose={() => {}} // Can't close while processing
+                disableEscapeKeyDown
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <PersonAddIcon color="primary" />
+                        <Typography variant="h6">Creating User Accounts</Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Box sx={{ py: 2 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            {activationProgress.msg}
+                        </Typography>
+                        
+                        <Box sx={{ mb: 3 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="body2" fontWeight="medium">
+                                    Progress
+                                </Typography>
+                                <Typography variant="body2" fontWeight="bold" color="primary">
+                                    {activationProgress.percentage}%
+                                </Typography>
+                            </Box>
+                            <LinearProgress 
+                                variant="determinate" 
+                                value={activationProgress.percentage} 
+                                sx={{ 
+                                    height: 10, 
+                                    borderRadius: 5,
+                                    bgcolor: 'grey.200',
+                                    '& .MuiLinearProgress-bar': {
+                                        borderRadius: 5,
+                                        background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)',
+                                    }
+                                }}
+                            />
+                        </Box>
+
+                        <Grid container spacing={2}>
+                            <Grid item xs={4}>
+                                <Box sx={{ textAlign: 'center', p: 1.5, bgcolor: '#f1f8e9', borderRadius: 2 }}>
+                                    <Typography variant="h5" fontWeight="bold" color="#558b2f">
+                                        {activationProgress.activated}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Created
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                            <Grid item xs={4}>
+                                <Box sx={{ textAlign: 'center', p: 1.5, bgcolor: '#fff3e0', borderRadius: 2 }}>
+                                    <Typography variant="h5" fontWeight="bold" color="#e65100">
+                                        {activationProgress.skipped}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Skipped
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                            <Grid item xs={4}>
+                                <Box sx={{ textAlign: 'center', p: 1.5, bgcolor: '#ffebee', borderRadius: 2 }}>
+                                    <Typography variant="h5" fontWeight="bold" color="#c62828">
+                                        {activationProgress.failed}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Failed
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                        </Grid>
+
+                        <Alert severity="info" sx={{ mt: 2 }}>
+                            <Typography variant="caption">
+                                ⏳ Please wait... This usually takes 10-30 seconds for 100 leads.
+                            </Typography>
+                        </Alert>
+                    </Box>
+                </DialogContent>
+            </Dialog>
         </Box>
     );
 };

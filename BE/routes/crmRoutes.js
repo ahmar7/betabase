@@ -4,7 +4,9 @@ const { authorizedRoles, isAuthorizedUser, checkCrmAccess } = require("../middle
 
 const singleUpload = require("../middlewares/multer");
 const { uploadCSV, loginCRM, getLeads, exportLeads, createLead, deleteLead, deleteAllLeads, bulkDeleteLeads, editLead, assignLeadsToAgent, getDeletedLeads, restoreLead, hardDeleteLead, bulkRestoreLeads, bulkHardDeleteLeads, restoreAllLeads, hardDeleteAllLeads } = require("../controllers/crmController");
-const { activateLead, bulkActivateLeads, getActivationProgress, getFailedEmails, resendFailedEmails, deleteFailedEmails } = require("../controllers/activateLeads");
+const { activateLead, bulkActivateLeads: bulkActivateLeadsOld, getActivationProgress, getFailedEmails, resendFailedEmails, deleteFailedEmails } = require("../controllers/activateLeads");
+const { bulkActivateLeads, getEmailQueueStatus, processEmailQueueNow } = require("../controllers/activateLeadsNew");
+const { getLeadActivities, addLeadComment, getLeadWithActivity, editComment, deleteComment, toggleLike, togglePin, toggleImportant, addQuoteReply, addNestedReply, getCommentHistory, getNestedReplies, searchComments } = require("../controllers/activityController");
 const multer = require('multer');
 
 // Configure multer for file uploads
@@ -66,6 +68,12 @@ router.route('/crm/bulkActivateLeads').post(isAuthorizedUser,
 router.route('/crm/activation/progress/:sessionId').get(isAuthorizedUser,
     authorizedRoles("superadmin", "admin"), checkCrmAccess, getActivationProgress);
 
+// Email Queue management (new approach)
+router.route('/crm/emailQueue/status').get(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, getEmailQueueStatus);
+router.route('/crm/emailQueue/process').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, processEmailQueueNow);
+
 // Failed emails management
 router.route('/crm/failedEmails').get(isAuthorizedUser,
     authorizedRoles("superadmin"), checkCrmAccess, getFailedEmails);
@@ -74,6 +82,53 @@ router.route('/crm/failedEmails/resend').post(isAuthorizedUser,
 router.route('/crm/failedEmails/delete').post(isAuthorizedUser,
     authorizedRoles("superadmin"), checkCrmAccess, deleteFailedEmails);
 
-// router.route('/crm/leads').get(isAuthorizedUser, authorizedRoles("superadmin", "admin", "subadmin"), uploadCSV);
+// Activity/Stream routes
+router.route('/crm/leads/:leadId/stream').get(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getLeadWithActivity);
+router.route('/crm/lead/:leadId/activities').get(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getLeadActivities);
+router.route('/crm/lead/:leadId/comment').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, addLeadComment);
+
+// ✅ NEW: Enhanced Comment Features
+// Edit Comment
+router.route('/crm/lead/:leadId/comment/:commentId/edit').patch(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, editComment);
+
+// Delete Comment (role-based permissions handled in controller)
+router.route('/crm/lead/:leadId/comment/:commentId/delete').delete(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, deleteComment);
+
+// Like/Unlike Comment
+router.route('/crm/lead/:leadId/comment/:commentId/like').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, toggleLike);
+
+// Pin/Unpin Comment
+router.route('/crm/lead/:leadId/comment/:commentId/pin').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, togglePin);
+
+// Mark/Unmark as Important
+router.route('/crm/lead/:leadId/comment/:commentId/important').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin"), checkCrmAccess, toggleImportant);
+
+// Quote Reply
+router.route('/crm/lead/:leadId/comment/:commentId/quote-reply').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, addQuoteReply);
+
+// Nested Reply
+router.route('/crm/lead/:leadId/comment/:commentId/reply').post(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, addNestedReply);
+
+// Get Comment Edit History
+router.route('/crm/lead/:leadId/comment/:commentId/history').get(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getCommentHistory);
+
+// Get Nested Replies
+router.route('/crm/lead/:leadId/comment/:commentId/replies').get(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, getNestedReplies);
+
+// Search Comments
+router.route('/crm/lead/:leadId/comments/search').get(isAuthorizedUser,
+    authorizedRoles("superadmin", "admin", "subadmin"), checkCrmAccess, searchComments);
 
 module.exports = router;

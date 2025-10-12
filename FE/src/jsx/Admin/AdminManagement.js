@@ -52,7 +52,9 @@ const AdminManagement = () => {
 
   const getAllUsers = async () => {
     try {
-      const allUsers = await allUsersApi();
+      // Fetch admins only with role filter
+      const params = { role: 'admin', limit: 1000 };
+      const allUsers = await allUsersApi(params);
 
       if (allUsers.success) {
         let filtered;
