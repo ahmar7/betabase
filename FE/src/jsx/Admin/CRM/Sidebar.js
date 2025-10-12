@@ -54,7 +54,16 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     // Connect to Socket.io - Use same backend as API calls
     // Extract backend URL: https://api.bitblaze.space/api/v1 → https://api.bitblaze.space
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-    const backendUrl = apiUrl.replace(/\/api.*$/, ''); // Remove /api and everything after
+    
+    // Parse URL properly to avoid malformed URLs
+    let backendUrl;
+    try {
+      const url = new URL(apiUrl);
+      backendUrl = `${url.protocol}//${url.host}`; // Get protocol + host only
+    } catch (e) {
+      console.error('Invalid REACT_APP_API_URL:', apiUrl);
+      backendUrl = 'http://localhost:5000'; // Fallback
+    }
     
     console.log('🔌 Connecting to Socket.io:', backendUrl);
     
