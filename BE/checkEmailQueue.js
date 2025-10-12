@@ -3,7 +3,8 @@
  * Run: node checkEmailQueue.js
  */
 
-require('dotenv').config({ path: './config/config.env' });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, 'config', 'config.env') });
 const mongoose = require('mongoose');
 
 // Simple schemas (no need to require from models)
@@ -12,7 +13,15 @@ const FailedEmail = mongoose.model('FailedEmail', new mongoose.Schema({}, { stri
 
 async function checkQueue() {
   try {
+    if (!process.env.DB) {
+      console.error('❌ Error: DB environment variable not found!');
+      console.log('💡 Make sure config.env exists in BE/config/ folder');
+      process.exit(1);
+    }
+
     console.log('\n🔌 Connecting to MongoDB...');
+    console.log(`📍 Database: ${process.env.DB.substring(0, 30)}...`);
+    
     await mongoose.connect(process.env.DB, {
       useNewUrlParser: true,
       useUnifiedTopology: true,

@@ -422,10 +422,24 @@ const EmailQueue = () => {
 
                     {/* Info Alert */}
                     <Alert severity="info" sx={{ mb: 3 }}>
-                        <Typography variant="body2">
-                            📧 Emails are processed automatically every 30 seconds in the background. 
-                            You can refresh the page anytime - the email sending will continue.
-                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                            <Typography variant="body2" sx={{ flex: 1 }}>
+                                📧 Emails are processed automatically every 30 seconds in the background. 
+                                You can refresh the page anytime - the email sending will continue.
+                            </Typography>
+                            {queueStatus.total > 0 && (
+                                <Button
+                                    variant="contained"
+                                    color="warning"
+                                    size="small"
+                                    onClick={handleClearQueue}
+                                    disabled={clearingQueue}
+                                    startIcon={clearingQueue ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon />}
+                                >
+                                    {clearingQueue ? 'Clearing...' : `Clear Queue (${queueStatus.total})`}
+                                </Button>
+                            )}
+                        </Box>
                     </Alert>
 
                     {/* Tabs */}
