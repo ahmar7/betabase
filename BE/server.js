@@ -3,6 +3,7 @@ const User = require('./models/userModel');
 const PendingActivationEmail = require('./models/pendingActivationEmail');
 const FailedEmail = require('./models/failedEmail');
 const sendEmail = require('./utils/sendEmail');
+const cron = require('node-cron');
 var bodyParser = require("body-parser");
 const { errorMiddleware } = require("./middlewares/errorMiddleware");
 // Database connect
@@ -296,3 +297,30 @@ processEmailQueue().then(() => {
 }).catch(err => {
   console.error('❌ Error in initial email queue check:', err);
 });
+
+// ✅ Cron job: Delete 'sent' emails older than 10 days (runs daily at midnight)
+cron.schedule('0 0 * * *', async () => {
+  try {
+    console.log('\n🧹 ========================================');
+    console.log('🧹 Running cleanup: Deleting old sent emails');
+    console.log('🧹 ========================================\n');
+    
+    // Calculate date 10 days ago
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+    
+    // Delete emails with status 'sent' that are older than 10 days
+    const result = await FailedEmail.deleteMany({
+      status: 'sent',
+      sentAt: { $lt: tenDaysAgo }
+    });
+    
+    console.log(`🗑️ Cleanup complete: Deleted ${result.deletedCount} old 'sent' emails (older than 10 days)`);
+    console.log(`📅 Cutoff date: ${tenDaysAgo.toISOString()}\n`);
+    
+  } catch (error) {
+    console.error('❌ Error in cleanup cron job:', error);
+  }
+});
+
+console.log('✅ Cron job scheduled: Old sent emails cleanup (daily at midnight)\n');

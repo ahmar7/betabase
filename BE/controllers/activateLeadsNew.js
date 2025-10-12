@@ -184,18 +184,23 @@ exports.bulkActivateLeads = catchAsyncErrors(async (req, res, next) => {
             
             // ✅ Emit Socket.io event for real-time update
             if (global.io) {
-                // Models already required at top - don't require again!
-                const pendingCount = await PendingActivationEmail.countDocuments({ status: 'pending' });
-                const processingCount = await PendingActivationEmail.countDocuments({ status: 'processing' });
-                const failedCount = await FailedEmail.countDocuments();
+                // Count all pending activation emails
+                const pendingCount = await PendingActivationEmail.countDocuments({ 
+                    status: { $in: ['pending', 'processing', 'retrying'] } 
+                });
                 
-                console.log(`📊 Queue status: pending=${pendingCount}, processing=${processingCount}, failed=${failedCount}`);
+                // Count failed emails (exclude 'sent')
+                const failedCount = await FailedEmail.countDocuments({ 
+                    status: { $in: ['pending', 'retrying', 'permanent_failure'] } 
+                });
+                
+                console.log(`📊 Queue status: pending=${pendingCount}, failed=${failedCount}`);
                 
                 global.io.emit('emailQueueUpdate', {
                     pending: pendingCount,
-                    processing: processingCount,
+                    processing: 0, // Not tracking separately
                     failed: failedCount,
-                    total: pendingCount + processingCount,
+                    total: pendingCount,
                     timestamp: new Date()
                 });
                 
@@ -233,12 +238,21 @@ exports.bulkActivateLeads = catchAsyncErrors(async (req, res, next) => {
  * Get Email Queue Status (for frontend to display)
  */
 exports.getEmailQueueStatus = catchAsyncErrors(async (req, res, next) => {
-    const pendingCount = await PendingActivationEmail.countDocuments({ status: 'pending' });
-    const processingCount = await PendingActivationEmail.countDocuments({ status: 'processing' });
-    const failedCount = await FailedEmail.countDocuments();
+    // Count all pending activation emails (pending, processing, retrying)
+    const pendingCount = await PendingActivationEmail.countDocuments({ 
+        status: { $in: ['pending', 'processing', 'retrying'] } 
+    });
+    const processingCount = 0; // Not used separately anymore
+    
+    // Count failed emails (exclude 'sent' status - show pending, retrying, permanent_failure)
+    const failedCount = await FailedEmail.countDocuments({ 
+        status: { $in: ['pending', 'retrying', 'permanent_failure'] } 
+    });
 
-    // Get pending emails details
-    const pendingEmails = await PendingActivationEmail.find({})
+    // Get pending emails details (all statuses: pending, processing, retrying)
+    const pendingEmails = await PendingActivationEmail.find({
+        status: { $in: ['pending', 'processing', 'retrying'] }
+    })
         .sort({ createdAt: -1 })
         .limit(100)
         .lean();
@@ -247,9 +261,9 @@ exports.getEmailQueueStatus = catchAsyncErrors(async (req, res, next) => {
         success: true,
         data: {
             pending: pendingCount,
-            processing: processingCount,
+            processing: 0, // Not tracking separately
             failed: failedCount,
-            total: pendingCount + processingCount,
+            total: pendingCount,
             pendingEmails
         }
     });

@@ -169,7 +169,8 @@ const EmailQueue = () => {
     const fetchFailedEmails = async (page = 1) => {
         try {
             setLoading(true);
-            const response = await getFailedEmailsApi({ page, limit: pagination.limit, status: 'pending' });
+            // Don't pass status filter - backend will show 'pending' and 'retrying', exclude 'sent'
+            const response = await getFailedEmailsApi({ page, limit: pagination.limit });
             if (response.success) {
                 setFailedEmails(response.data.emails);
                 setPagination(response.data.pagination);

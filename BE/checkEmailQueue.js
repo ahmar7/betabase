@@ -4,7 +4,27 @@
  */
 
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, 'config', 'config.env') });
+const fs = require('fs');
+
+// Load config.env manually
+const envPath = path.join(__dirname, 'config', 'config.env');
+if (fs.existsSync(envPath)) {
+  const envConfig = fs.readFileSync(envPath, 'utf8');
+  envConfig.split('\n').forEach(line => {
+    const match = line.match(/^([^=:#]+)=(.*)$/);
+    if (match) {
+      const key = match[1].trim();
+      let value = match[2].trim();
+      // Remove quotes if present
+      value = value.replace(/^["']|["']$/g, '');
+      process.env[key] = value;
+    }
+  });
+  console.log('✅ Loaded config.env');
+} else {
+  console.error('❌ config.env not found at:', envPath);
+}
+
 const mongoose = require('mongoose');
 
 // Simple schemas (no need to require from models)
@@ -13,16 +33,16 @@ const FailedEmail = mongoose.model('FailedEmail', new mongoose.Schema({}, { stri
 
 async function checkQueue() {
   try {
-    if (!process.env.DB) {
+    if (!process.env.DATABASE) {
       console.error('❌ Error: DB environment variable not found!');
       console.log('💡 Make sure config.env exists in BE/config/ folder');
       process.exit(1);
     }
 
     console.log('\n🔌 Connecting to MongoDB...');
-    console.log(`📍 Database: ${process.env.DB.substring(0, 30)}...`);
+    console.log(`📍 Database: ${process.env.DATABASE.substring(0, 30)}...`);
     
-    await mongoose.connect(process.env.DB, {
+    await mongoose.connect(process.env.DATABASE, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });

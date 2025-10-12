@@ -648,13 +648,17 @@ ${process.env.WebName} Team`;
 // Get failed emails for superadmin
 exports.getFailedEmails = catchAsyncErrors(async (req, res, next) => {
     try {
-        const { page = 1, limit = 50, status = 'pending' } = req.query;
+        const { page = 1, limit = 50, status } = req.query;
         
         const pageNum = parseInt(page);
         const limitNum = parseInt(limit);
         const skip = (pageNum - 1) * limitNum;
         
-        const query = { status };
+        // Exclude 'sent' status from failed emails list
+        // Show: pending, retrying, permanent_failure (NOT sent)
+        const query = status 
+            ? { status } 
+            : { status: { $in: ['pending', 'retrying', 'permanent_failure'] } };
         
         const [failedEmails, total] = await Promise.all([
             FailedEmail.find(query)
@@ -725,7 +729,7 @@ exports.resendFailedEmails = catchAsyncErrors(async (req, res, next) => {
                 // Attempt to send
                 await sendEmail(failedEmail.email, failedEmail.subject, failedEmail.text);
                 
-                // Success! Mark as sent
+                // Success! Mark as sent (will be deleted by cron after 10 days)
                 failedEmail.status = 'sent';
                 failedEmail.sentAt = new Date();
                 await failedEmail.save();
