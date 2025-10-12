@@ -42,7 +42,8 @@ import {
     getFailedEmailsApi, 
     resendFailedEmailsApi, 
     deleteFailedEmailsApi,
-    processEmailQueueApi 
+    processEmailQueueApi,
+    clearEmailQueueApi
 } from '../../../Api/Service';
 import { toast } from 'react-toastify';
 import Sidebar from './Sidebar';
@@ -57,6 +58,7 @@ const EmailQueue = () => {
     const [selectedEmails, setSelectedEmails] = useState(new Set());
     const [resending, setResending] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [clearingQueue, setClearingQueue] = useState(false);
     const [tabValue, setTabValue] = useState(0);
     const [queueStatus, setQueueStatus] = useState({
         pending: 0,
@@ -256,6 +258,33 @@ const EmailQueue = () => {
             }
         } catch (error) {
             toast.error('Error triggering queue processing');
+        }
+    };
+
+    const handleClearQueue = async () => {
+        if (!window.confirm('⚠️ Clear all pending emails from queue?\n\nThis will remove all pending email entries from database.\n\nOnly do this if emails were already sent successfully via Resend/SendGrid.')) {
+            return;
+        }
+
+        try {
+            setClearingQueue(true);
+            toast.info('Clearing email queue...');
+
+            const response = await clearEmailQueueApi();
+            
+            if (response.success) {
+                toast.success(response.msg || 'Email queue cleared successfully!');
+                
+                // Refresh queue status
+                fetchQueueStatus();
+            } else {
+                toast.error(response.msg || 'Failed to clear email queue');
+            }
+        } catch (error) {
+            console.error('Clear queue error:', error);
+            toast.error('Error clearing email queue');
+        } finally {
+            setClearingQueue(false);
         }
     };
 

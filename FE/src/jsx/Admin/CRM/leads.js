@@ -99,8 +99,7 @@ import {
     activateLeadApi,
     activateLeadsBulkApi,
     activateLeadsBulkWithProgress,
-    getEmailQueueStatusApi,
-    clearEmailQueueApi
+    getEmailQueueStatusApi
 } from "../../../Api/Service";
 import { toast } from "react-toastify";
 import Sidebar from "./Sidebar.js";
@@ -1417,8 +1416,6 @@ const LeadsPage = () => {
         msg: ''
     });
 
-    const [clearingQueue, setClearingQueue] = useState(false);
-
     // ✅ Socket.io connection for real-time email queue updates
     useEffect(() => {
         // Extract backend URL: https://api.bitblaze.space/api/v1 → https://api.bitblaze.space
@@ -1958,38 +1955,6 @@ const LeadsPage = () => {
     const toggleExpandLead = (leadId) => {
         setExpandedLead(expandedLead === leadId ? null : leadId);
     };
-    // Clear email queue handler (debug/superadmin only)
-    const handleClearEmailQueue = async () => {
-        if (!window.confirm('⚠️ Clear all pending emails from queue?\n\nThis will remove the email queue badge but emails may not be sent.\n\nContinue only if emails were already sent successfully via Resend.')) {
-            return;
-        }
-
-        try {
-            setClearingQueue(true);
-            toast.info('Clearing email queue...');
-
-            const response = await clearEmailQueueApi();
-            
-            if (response.success) {
-                toast.success(response.msg || 'Email queue cleared successfully!');
-                
-                // Update local state immediately
-                setEmailQueueStatus({
-                    pending: 0,
-                    processing: 0,
-                    failed: response.newStatus?.failed || 0,
-                    total: 0
-                });
-            } else {
-                toast.error(response.msg || 'Failed to clear email queue');
-            }
-        } catch (error) {
-            console.error('Clear queue error:', error);
-            toast.error('Error clearing email queue');
-        } finally {
-            setClearingQueue(false);
-        }
-    };
 
     const handleExportLeads = async () => {
         try {
@@ -2307,23 +2272,6 @@ const LeadsPage = () => {
                             >
                                 Create Lead
                             </Button>
-                            {/* Debug: Clear Email Queue (Superadmin only) */}
-                            {authUser()?.user?.role === 'superadmin' && emailQueueStatus.total > 0 && (
-                                <Button
-                                    variant="outlined"
-                                    color="warning"
-                                    startIcon={<Mail />}
-                                    size="small"
-                                    sx={{ 
-                                        borderRadius: 2,
-                                        flex: { xs: '1 1 100%', sm: '0 0 auto' }
-                                    }}
-                                    onClick={handleClearEmailQueue}
-                                    disabled={clearingQueue}
-                                >
-                                    {clearingQueue ? 'Clearing...' : `Clear Queue (${emailQueueStatus.total})`}
-                                </Button>
-                            )}
                         </Box>
                     </Box>
 

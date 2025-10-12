@@ -27,7 +27,7 @@ import {
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { useAuthUser, useSignOut } from "react-auth-kit";
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { logoutApi, getEmailQueueStatusApi, clearEmailQueueApi } from '../../../Api/Service';
+import { logoutApi, getEmailQueueStatusApi } from '../../../Api/Service';
 import { toast } from 'react-toastify';
 import io from 'socket.io-client';
 
@@ -114,32 +114,6 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     menuItems.push({ icon: <DeleteForeverIcon />, label: 'Recycle Bin', link: "/admin/dashboard/crm/recycle-bin" });
     menuItems.push({ icon: <EmailOutlined />, label: 'Email Queue', link: "/admin/crm/email-queue", badge: true });
   }
-
-  // Clear email queue (for stuck badges)
-  const handleClearEmailQueue = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!window.confirm('⚠️ Clear all pending emails from queue?\n\nThis will remove the email queue badge.\n\nOnly do this if emails were already sent successfully via Resend.')) {
-      return;
-    }
-
-    try {
-      toast.info('Clearing email queue...');
-      
-      const response = await clearEmailQueueApi();
-      
-      if (response.success) {
-        toast.success('Email queue cleared! Badge should disappear.');
-        setEmailQueueCount(0); // Update immediately
-      } else {
-        toast.error('Failed to clear email queue');
-      }
-    } catch (error) {
-      console.error('Clear queue error:', error);
-      toast.error('Error clearing email queue');
-    }
-  };
 
   const handleLogout = async () => {
     try {
@@ -266,16 +240,6 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                       badgeContent={emailQueueCount} 
                       color="warning" 
                       max={99}
-                      sx={{
-                        cursor: 'pointer',
-                        '& .MuiBadge-badge': {
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: 'warning.dark'
-                          }
-                        }
-                      }}
-                      onClick={handleClearEmailQueue}
                     >
                       {item.icon}
                     </Badge>
@@ -297,16 +261,6 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                     badgeContent={emailQueueCount} 
                     color="warning" 
                     max={99}
-                    sx={{
-                      cursor: 'pointer',
-                      '& .MuiBadge-badge': {
-                        cursor: 'pointer',
-                        '&:hover': {
-                          backgroundColor: 'warning.dark'
-                        }
-                      }
-                    }}
-                    onClick={handleClearEmailQueue}
                   />
                 )}
               </ListItemButton>
