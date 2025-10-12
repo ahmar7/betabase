@@ -27,7 +27,7 @@ import {
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { useAuthUser, useSignOut } from "react-auth-kit";
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { logoutApi, getEmailQueueStatusApi } from '../../../Api/Service';
+import { logoutApi, getEmailQueueStatusApi, clearEmailQueueApi } from '../../../Api/Service';
 import { toast } from 'react-toastify';
 import io from 'socket.io-client';
 
@@ -51,13 +51,24 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
   useEffect(() => {
     if (user()?.user?.role !== 'superadmin') return;
 
-    // Connect to Socket.io
-    const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:4000', {
-      withCredentials: true
+    // Connect to Socket.io - Use same backend as API calls
+    // Extract backend URL: https://api.bitblaze.space/api/v1 → https://api.bitblaze.space
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    const backendUrl = apiUrl.replace(/\/api.*$/, ''); // Remove /api and everything after
+    
+    console.log('🔌 Connecting to Socket.io:', backendUrl);
+    
+    const socket = io(backendUrl, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'] // Better compatibility
     });
 
     socket.on('connect', () => {
-      console.log('🔌 Sidebar connected to Socket.io');
+      console.log('✅ Sidebar connected to Socket.io at:', backendUrl);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket.io connection error:', error.message);
     });
 
     // Listen for email queue updates
@@ -72,12 +83,14 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
       if (response.success) {
         const totalCount = (response.data.pending || 0) + (response.data.failed || 0);
         setEmailQueueCount(totalCount);
+        console.log('📊 Initial email queue count:', totalCount);
       }
     }).catch(err => {
       console.error('Error fetching email queue status:', err);
     });
 
     return () => {
+      console.log('🔌 Disconnecting Socket.io');
       socket.disconnect();
     };
   }, [user]);
@@ -92,6 +105,32 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     menuItems.push({ icon: <DeleteForeverIcon />, label: 'Recycle Bin', link: "/admin/dashboard/crm/recycle-bin" });
     menuItems.push({ icon: <EmailOutlined />, label: 'Email Queue', link: "/admin/crm/email-queue", badge: true });
   }
+
+  // Clear email queue (for stuck badges)
+  const handleClearEmailQueue = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!window.confirm('⚠️ Clear all pending emails from queue?\n\nThis will remove the email queue badge.\n\nOnly do this if emails were already sent successfully via Resend.')) {
+      return;
+    }
+
+    try {
+      toast.info('Clearing email queue...');
+      
+      const response = await clearEmailQueueApi();
+      
+      if (response.success) {
+        toast.success('Email queue cleared! Badge should disappear.');
+        setEmailQueueCount(0); // Update immediately
+      } else {
+        toast.error('Failed to clear email queue');
+      }
+    } catch (error) {
+      console.error('Clear queue error:', error);
+      toast.error('Error clearing email queue');
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -126,7 +165,7 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
     handleResize(); // Initialize on mount
 
     return () => window.removeEventListener('resize', handleResize);
-  }, [mobileMenuState, setMobileMenuState]);
+  }, [setMobileMenuState]);
 
   const isActiveLink = (link) => {
     return location.pathname === link;
@@ -214,7 +253,21 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                   }}
                 >
                   {item.badge && emailQueueCount > 0 ? (
-                    <Badge badgeContent={emailQueueCount} color="warning" max={99}>
+                    <Badge 
+                      badgeContent={emailQueueCount} 
+                      color="warning" 
+                      max={99}
+                      sx={{
+                        cursor: 'pointer',
+                        '& .MuiBadge-badge': {
+                          cursor: 'pointer',
+                          '&:hover': {
+                            backgroundColor: 'warning.dark'
+                          }
+                        }
+                      }}
+                      onClick={handleClearEmailQueue}
+                    >
                       {item.icon}
                     </Badge>
                   ) : (
@@ -231,7 +284,21 @@ const Sidebar = ({ isCollapsed, setIsSidebarCollapsed, isMobileMenu, setisMobile
                   />
                 )}
                 {!isCollapsed && item.badge && emailQueueCount > 0 && (
-                  <Badge badgeContent={emailQueueCount} color="warning" max={99} />
+                  <Badge 
+                    badgeContent={emailQueueCount} 
+                    color="warning" 
+                    max={99}
+                    sx={{
+                      cursor: 'pointer',
+                      '& .MuiBadge-badge': {
+                        cursor: 'pointer',
+                        '&:hover': {
+                          backgroundColor: 'warning.dark'
+                        }
+                      }
+                    }}
+                    onClick={handleClearEmailQueue}
+                  />
                 )}
               </ListItemButton>
             </ListItem>

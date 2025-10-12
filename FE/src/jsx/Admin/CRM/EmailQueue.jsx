@@ -104,8 +104,13 @@ const EmailQueue = () => {
 
     // ✅ Socket.io for real-time updates
     useEffect(() => {
-        const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:4000', {
-            withCredentials: true
+        // Extract backend URL: https://api.bitblaze.space/api/v1 → https://api.bitblaze.space
+        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+        const backendUrl = apiUrl.replace(/\/api.*$/, ''); // Remove /api and everything after
+        
+        const socket = io(backendUrl, {
+            withCredentials: true,
+            transports: ['websocket', 'polling'] // Better compatibility
         });
 
         socket.on('connect', () => {
