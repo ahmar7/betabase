@@ -21,9 +21,31 @@ module.exports = async (email, subject, text) => {
     console.log(`📧 Attempting to send email to: ${email}`);
     console.log(`📧 Subject: ${subject.substring(0, 50)}${subject.length > 50 ? '...' : ''}`);
 
-    // ✅ OPTION 1: Try Resend API First (EASIEST - No phone verification!)
-    if (process.env.RESEND_API_KEY) {
-      console.log('🚀 Using Resend API (easiest setup, no phone needed)');
+    // 📊 CHECK AVAILABLE EMAIL SERVICES
+    const availableServices = {
+      resend: !!(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.trim()),
+      emailjs: !!(process.env.EMAILJS_SERVICE_ID && process.env.EMAILJS_TEMPLATE_ID && process.env.EMAILJS_PUBLIC_KEY),
+      sendgrid: !!(process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY.trim()),
+      smtp: !!(process.env.HOST && process.env.USER && process.env.PASS && process.env.EMAIL_PORT)
+    };
+
+    console.log('📊 Available email services:', {
+      resend: availableServices.resend ? '✅ Configured' : '❌ Missing RESEND_API_KEY',
+      emailjs: availableServices.emailjs ? '✅ Configured' : '❌ Missing EMAILJS config',
+      sendgrid: availableServices.sendgrid ? '✅ Configured' : '❌ Missing SENDGRID_API_KEY',
+      smtp: availableServices.smtp ? '✅ Configured' : '❌ Missing SMTP config'
+    });
+
+    const totalServices = Object.values(availableServices).filter(Boolean).length;
+    console.log(`🎯 Will try ${totalServices} available service(s) in order: ${Object.entries(availableServices).filter(([,available]) => available).map(([name]) => name).join(' → ')}`);
+
+    let attemptedServices = [];
+    let lastError = null;
+
+    // ✅ OPTION 1: Try Resend API First (BEST - No phone verification!)
+    if (availableServices.resend) {
+      console.log('\n🚀 [1/4] Trying Resend API (recommended)');
+      attemptedServices.push('resend');
       
       try {
         const resend = new Resend(process.env.RESEND_API_KEY);
@@ -37,31 +59,36 @@ module.exports = async (email, subject, text) => {
         });
 
         if (error) {
-          throw new Error(error.message);
+          throw new Error(`Resend API error: ${error.message}`);
         }
 
-        console.log(`✅ Email sent successfully via Resend to: ${email}`);
+        console.log(`✅ SUCCESS! Email sent via Resend to: ${email}`);
         console.log(`📬 Message ID: ${data.id}`);
         return {
           success: true,
           messageId: data.id,
           provider: 'resend',
-          method: 'api'
+          method: 'api',
+          attemptedServices
         };
       } catch (resendError) {
-        console.error('❌ Resend error:', resendError.message);
-        console.log('⚠️ Resend failed, trying EmailJS fallback...');
+        lastError = resendError;
+        console.error(`❌ Resend failed: ${resendError.message}`);
+        console.log('⚠️ Continuing to next service...');
       }
+    } else {
+      console.log('\n⏭️ [1/4] Skipping Resend API - not configured');
     }
 
     // ✅ OPTION 2: Try EmailJS API (Easy setup, 200 emails/month free)
-    if (process.env.EMAILJS_SERVICE_ID && process.env.EMAILJS_TEMPLATE_ID && process.env.EMAILJS_PUBLIC_KEY) {
-      console.log('📧 Using EmailJS API (easy setup, good for small projects)');
+    if (availableServices.emailjs) {
+      console.log('\n📧 [2/4] Trying EmailJS API');
+      attemptedServices.push('emailjs');
       
       try {
         const templateParams = {
           to_email: email,
-          to_name: email.split('@')[0], // Extract name from email
+          to_name: email.split('@')[0],
           subject: subject,
           message: text,
           from_name: 'BetaBase',
@@ -78,23 +105,28 @@ module.exports = async (email, subject, text) => {
           }
         );
 
-        console.log(`✅ Email sent successfully via EmailJS to: ${email}`);
-        console.log(`📬 Response Status: ${response.status} ${response.text}`);
+        console.log(`✅ SUCCESS! Email sent via EmailJS to: ${email}`);
+        console.log(`📬 Response: ${response.status} ${response.text}`);
         return {
           success: true,
           messageId: response.text,
           provider: 'emailjs',
-          method: 'api'
+          method: 'api',
+          attemptedServices
         };
       } catch (emailjsError) {
-        console.error('❌ EmailJS error:', emailjsError.message);
-        console.log('⚠️ EmailJS failed, trying SendGrid fallback...');
+        lastError = emailjsError;
+        console.error(`❌ EmailJS failed: ${emailjsError.message}`);
+        console.log('⚠️ Continuing to next service...');
       }
+    } else {
+      console.log('\n⏭️ [2/4] Skipping EmailJS - not configured (missing SERVICE_ID, TEMPLATE_ID, or PUBLIC_KEY)');
     }
 
     // ✅ OPTION 3: Try SendGrid API (Requires phone verification)
-    if (process.env.SENDGRID_API_KEY) {
-      console.log('🚀 Using SendGrid HTTP API (no SMTP ports needed)');
+    if (availableServices.sendgrid) {
+      console.log('\n🔷 [3/4] Trying SendGrid API');
+      attemptedServices.push('sendgrid');
       
       try {
         sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -102,7 +134,7 @@ module.exports = async (email, subject, text) => {
         const msg = {
           to: email,
           from: {
-            email: process.env.SENDGRID_FROM || process.env.USER,
+            email: process.env.SENDGRID_FROM || process.env.USER || 'noreply@betabase.pro',
             name: process.env.SENDGRID_FROM_NAME || 'BetaBase'
           },
           subject: subject,
@@ -116,115 +148,134 @@ module.exports = async (email, subject, text) => {
 
         await sgMail.send(msg);
         
-        console.log(`✅ Email sent successfully via SendGrid to: ${email}`);
+        console.log(`✅ SUCCESS! Email sent via SendGrid to: ${email}`);
         return {
           success: true,
           provider: 'sendgrid',
-          method: 'api'
+          method: 'api',
+          attemptedServices
         };
       } catch (sgError) {
-        console.error('❌ SendGrid error:', sgError.response?.body || sgError.message);
-        
-        // If SendGrid fails, try SMTP as fallback
-        console.log('⚠️ SendGrid failed, trying SMTP fallback...');
+        lastError = sgError;
+        const errorMsg = sgError.response?.body?.errors?.[0]?.message || sgError.message;
+        console.error(`❌ SendGrid failed: ${errorMsg}`);
+        console.log('⚠️ Continuing to next service...');
       }
+    } else {
+      console.log('\n⏭️ [3/4] Skipping SendGrid - not configured (missing SENDGRID_API_KEY)');
     }
 
     // ✅ OPTION 4: SMTP Fallback (Works locally, may fail on cloud platforms)
-    
-    // ENV VALIDATION - Ensure all required env vars exist
-    const requiredEnvVars = ['HOST', 'USER', 'PASS', 'EMAIL_PORT'];
-    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-    
-    if (missingVars.length > 0) {
-      console.error(`❌ Missing SMTP env vars: ${missingVars.join(', ')}`);
-      throw new Error(`Cannot send email: Missing ${missingVars.join(', ')}. Please configure SENDGRID_API_KEY or SMTP settings.`);
-    }
-
-    console.log('📨 Using SMTP (may not work on cloud platforms like Render)');
-
-    const isSecure = process.env.EMAIL_SECURE === 'true' || Number(process.env.EMAIL_PORT) === 465;
-    
-    const transporter = nodemailer.createTransport({
-      host: process.env.HOST,
-      port: Number(process.env.EMAIL_PORT),
-      secure: isSecure,
-      requireTLS: !isSecure,
-      tls: {
-        ciphers: 'SSLv3',
-        rejectUnauthorized: false,
-        minVersion: 'TLSv1.2'
-      },
-      auth: {
-        user: process.env.USER,
-        pass: process.env.PASS,
-      },
-      connectionTimeout: 10000, // Reduced to 10s - fail fast
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
-      pool: true,
-      maxConnections: 1,
-      maxMessages: 3,
-      rateDelta: 1000,
-      rateLimit: 5
-    });
-    
-    console.log(`📧 SMTP Config: ${process.env.HOST}:${process.env.EMAIL_PORT} (secure: ${isSecure})`);
-
-    // Quick SMTP verification
-    try {
-      console.log('🔌 Verifying SMTP connection (10s timeout)...');
-      await transporter.verify();
-      console.log('✅ SMTP connection verified');
-    } catch (verifyError) {
-      console.error('❌ SMTP verification failed:', verifyError.message);
+    if (availableServices.smtp) {
+      console.log('\n📨 [4/4] Trying SMTP (may not work on Render/Heroku - ports often blocked)');
+      attemptedServices.push('smtp');
       
-      // Provide helpful error message
-      let errorMsg = '❌ SMTP CONNECTION BLOCKED OR FAILED\n\n';
-      errorMsg += '🚨 This usually means:\n';
-      errorMsg += '   1. Render.com is blocking SMTP ports (25, 465, 587)\n';
-      errorMsg += '   2. Your hosting provider blocks outbound SMTP\n\n';
-      errorMsg += '✅ SOLUTION: Use SendGrid (FREE):\n';
-      errorMsg += '   1. Sign up: https://sendgrid.com/ (Free: 100 emails/day)\n';
-      errorMsg += '   2. Get API key from Settings > API Keys\n';
-      errorMsg += '   3. Add to Render env vars:\n';
-      errorMsg += '      SENDGRID_API_KEY=SG.xxxxxxxxxxxxx\n';
-      errorMsg += '      SENDGRID_FROM=admin@betabase.pro\n';
-      errorMsg += '      SENDGRID_FROM_NAME=BetaBase\n';
-      errorMsg += '   4. Restart server - emails will work!\n\n';
-      errorMsg += `   Original error: ${verifyError.message}`;
-      
-      throw new Error(errorMsg);
-    }
+      try {
+        const isSecure = process.env.EMAIL_SECURE === 'true' || Number(process.env.EMAIL_PORT) === 465;
+        
+        const transporter = nodemailer.createTransport({
+          host: process.env.HOST,
+          port: Number(process.env.EMAIL_PORT),
+          secure: isSecure,
+          requireTLS: !isSecure,
+          tls: {
+            ciphers: 'SSLv3',
+            rejectUnauthorized: false,
+            minVersion: 'TLSv1.2'
+          },
+          auth: {
+            user: process.env.USER,
+            pass: process.env.PASS,
+          },
+          connectionTimeout: 10000, // Reduced to 10s - fail fast on cloud
+          greetingTimeout: 10000,
+          socketTimeout: 10000,
+          pool: true,
+          maxConnections: 1,
+          maxMessages: 3,
+          rateDelta: 1000,
+          rateLimit: 5
+        });
+        
+        console.log(`📧 SMTP Config: ${process.env.HOST}:${process.env.EMAIL_PORT} (secure: ${isSecure})`);
 
-    // Send via SMTP
-    const mailOptions = {
-      from: {
-        name: 'BetaBase',
-        address: process.env.USER
-      },
-      to: email,
-      subject: subject,
-      text: text,
-      html: text.replace(/\n/g, '<br>'),
-      headers: {
-        'X-Mailer': 'BetaBase Email Service',
-        'X-Priority': '1',
-        'Importance': 'high'
+        // Quick SMTP verification
+        console.log('🔌 Verifying SMTP connection (10s timeout)...');
+        await transporter.verify();
+        console.log('✅ SMTP connection verified');
+
+        // Send via SMTP
+        const mailOptions = {
+          from: {
+            name: 'BetaBase',
+            address: process.env.USER
+          },
+          to: email,
+          subject: subject,
+          text: text,
+          html: text.replace(/\n/g, '<br>'),
+          headers: {
+            'X-Mailer': 'BetaBase Email Service',
+            'X-Priority': '1',
+            'Importance': 'high'
+          }
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        
+        console.log(`✅ SUCCESS! Email sent via SMTP to: ${email}`);
+        console.log(`📬 Message ID: ${info.messageId}`);
+
+        return {
+          success: true,
+          messageId: info.messageId,
+          provider: 'smtp',
+          method: 'nodemailer',
+          attemptedServices
+        };
+
+      } catch (smtpError) {
+        lastError = smtpError;
+        console.error(`❌ SMTP failed: ${smtpError.message}`);
+        
+        // Check if it's a connection timeout/blocked port
+        if (smtpError.code === 'ETIMEDOUT' || smtpError.message.includes('timeout')) {
+          console.log('🚨 SMTP timeout detected - likely blocked by cloud platform (Render/Heroku)');
+        }
       }
-    };
+    } else {
+      console.log('\n⏭️ [4/4] Skipping SMTP - not configured (missing HOST, USER, PASS, or EMAIL_PORT)');
+    }
 
-    const info = await transporter.sendMail(mailOptions);
+    // 🚨 ALL SERVICES FAILED
+    console.error('\n❌ ALL EMAIL SERVICES FAILED!');
+    console.error(`📊 Services attempted: ${attemptedServices.join(' → ')}`);
+    console.error(`📊 Services skipped: ${Object.entries(availableServices).filter(([name, available]) => !available && !attemptedServices.includes(name)).map(([name]) => name).join(', ') || 'none'}`);
     
-    console.log(`✅ Email sent successfully via SMTP to: ${email}`);
-    console.log(`📬 Message ID: ${info.messageId}`);
-
-    return {
-      success: true,
-      messageId: info.messageId,
-      provider: 'smtp',
-      method: 'nodemailer'
-    };
+    // Create comprehensive error message
+    let errorMsg = `❌ FAILED to send email to ${email}\n\n`;
+    errorMsg += `🔥 ATTEMPTED SERVICES: ${attemptedServices.length > 0 ? attemptedServices.join(' → ') : 'NONE'}\n`;
+    
+    if (attemptedServices.length === 0) {
+      errorMsg += `\n🚨 NO EMAIL SERVICES CONFIGURED!\n`;
+      errorMsg += `✅ QUICK SETUP:\n`;
+      errorMsg += `   1. Add RESEND_API_KEY to your environment (easiest)\n`;
+      errorMsg += `   2. Or configure SendGrid, EmailJS, or SMTP\n`;
+      errorMsg += `   3. See documentation for setup guides\n`;
+    } else {
+      errorMsg += `\n📝 LAST ERROR: ${lastError?.message || 'Unknown error'}\n`;
+      
+      if (!availableServices.resend) {
+        errorMsg += `\n✅ RECOMMENDED SOLUTION:\n`;
+        errorMsg += `   Add RESEND_API_KEY to your environment:\n`;
+        errorMsg += `   1. Sign up: https://resend.com/ (FREE)\n`;
+        errorMsg += `   2. Get API key: Dashboard > API Keys\n`;
+        errorMsg += `   3. Add to env: RESEND_API_KEY=re_xxxxx\n`;
+        errorMsg += `   4. Restart server\n`;
+      }
+    }
+    
+    throw new Error(errorMsg);
 
   } catch (error) {
     console.error('❌ Email FAILED to send to:', email);
