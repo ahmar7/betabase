@@ -33,7 +33,8 @@ exports.RegisterUser = catchAsyncErrors(async (req, res, next) => {
     country,
     postalCode,
     role,
-    isRole
+    isRole,
+    referralCode // MLM: Referral code from registration
   } = req.body;
   if (
     !firstName ||
@@ -65,6 +66,18 @@ exports.RegisterUser = catchAsyncErrors(async (req, res, next) => {
   }
   email.toLowerCase();
 
+  // MLM: Handle referral code if provided
+  let referrer = null;
+  if (referralCode && referralCode.trim()) {
+    referrer = await UserModel.findOne({ referralCode: referralCode.trim().toUpperCase() });
+    
+    if (!referrer) {
+      console.warn(`⚠️ Invalid referral code provided during registration: ${referralCode}`);
+      // Skip the referral instead of throwing error - allow registration to proceed
+      referrer = null;
+    }
+  }
+
   let createUser = await UserModel.create({
     firstName,
     lastName,
@@ -77,8 +90,22 @@ exports.RegisterUser = catchAsyncErrors(async (req, res, next) => {
     country,
     postalCode,
     role,
-    verified: isRole ? true : false
+    verified: isRole ? true : false,
+    referredBy: referrer ? referrer._id : null,
+    affiliateStatus: referrer ? 'inactive' : 'inactive' // Start as inactive
   });
+  
+  // MLM: Generate referral code for new user
+  const newUserRefCode = await createUser.generateReferralCode();
+  createUser.referralCode = newUserRefCode;
+  await createUser.save();
+  
+  // MLM: Add new user to referrer's directReferrals
+  if (referrer) {
+    referrer.directReferrals = referrer.directReferrals || [];
+    referrer.directReferrals.push(createUser._id);
+    await referrer.save();
+  }
   // role:'superadmin',
   // verified:'true'
   if (isRole) {
@@ -100,8 +127,10 @@ exports.RegisterUser = catchAsyncErrors(async (req, res, next) => {
 ${url}
 The link will be expired after 2 hours`;
   // 
-  let sendEmailError = await sendEmail(createUser.email, subject, text);
-  if (sendEmailError) {
+  try {
+    let emailResult = await sendEmail(createUser.email, subject, text);
+    console.log("Email sent successfully:", emailResult);
+  } catch (sendEmailError) {
     // Log the error for debugging
     console.error("Failed to send email:", sendEmailError);
 
@@ -110,7 +139,6 @@ The link will be expired after 2 hours`;
       msg: "Registration successful, but email could not be sent. Please login to continue!",
       success: true,
       error: sendEmailError.message,
-      // Optional: include the error message
     });
   }
 
@@ -300,7 +328,21 @@ exports.loginUser = catchAsyncErrors(async (req, res, next) => {
 ${url}
 
 The link will be expired after 2 hours`;
-      await sendEmail(UserAuth.email, subject, text);
+      
+      try {
+        let emailResult = await sendEmail(UserAuth.email, subject, text);
+        console.log("Email sent successfully:", emailResult);
+      } catch (sendEmailError) {
+        // Log the error for debugging
+        console.error("Failed to send email:", sendEmailError);
+
+        // Respond with an error status and message
+        return res.status(500).send({
+          msg: "Email verification link sending failed. Please try again.",
+          success: false,
+          error: sendEmailError.message,
+        });
+      }
       //
     } else if (token) {
       await Token.findOneAndDelete({ userId: UserAuth._id });
@@ -317,9 +359,11 @@ The link will be expired after 2 hours`;
 ${url}
 
 The link will be expired after 2 hours`;
-      // await sendEmail(UserAuth.email, subject, text);
-      let sendEmailError = await sendEmail(UserAuth.email, subject, text);
-      if (sendEmailError) {
+      
+      try {
+        let emailResult = await sendEmail(UserAuth.email, subject, text);
+        console.log("Email sent successfully:", emailResult);
+      } catch (sendEmailError) {
         // Log the error for debugging
         console.error("Failed to send email:", sendEmailError);
 
@@ -327,7 +371,7 @@ The link will be expired after 2 hours`;
         return res.status(500).send({
           msg: "Email verification link sending failed. Please try again.",
           success: false,
-          error: sendEmailError.message, // Optional: include the error message
+          error: sendEmailError.message,
         });
       }
 
@@ -369,21 +413,21 @@ ${title}
 Ticket Description:
 ${description}`;
 
-  let sendEmailError = await sendEmail(process.env.USER, newTitle, newDescription);
-  if (sendEmailError) {
+  try {
+    let emailResult = await sendEmail(process.env.USER, newTitle, newDescription);
+    console.log("Ticket email sent successfully:", emailResult);
+  } catch (sendEmailError) {
     // Log the error for debugging
     console.error("Failed to send email:", sendEmailError);
 
     // Respond with an error status and message
     return next(new errorHandler("Ticket submission failed, please try again!", 500));
-
   }
 
   res.status(200).send({
     msg: "Your ticket was sent. You will be answered by one of our representatives.",
     success: true,
   });
-  await sendEmail(process.env.USER, newTitle, newDescription);
 
 
 });
@@ -440,14 +484,15 @@ If you did not request this code, please ignore this email or contact our suppor
 Stay safe,
 The ${process.env.WebName} Team
 `;
-  let sendEmailError = await sendEmail(email, subject, text);
-  if (sendEmailError) {
+  
+  try {
+    let emailResult = await sendEmail(email, subject, text);
+    console.log("OTP email sent successfully:", emailResult);
+  } catch (sendEmailError) {
     // Log the error for debugging
     console.error("Failed to send email:", sendEmailError);
 
-
-    return next(new errorHandler("OTP sending failed, please try again!", 500))
-
+    return next(new errorHandler("OTP sending failed, please try again!", 500));
   }
 
   res.status(201).send({
@@ -923,8 +968,14 @@ ${url}
 Best regards,  
 The ${process.env.WebName} Team
 `;
-  sendEmail(process.env.USER, subject, text)
-    .catch(err => console.error("Email send error:", err));
+  
+  try {
+    await sendEmail(process.env.USER, subject, text);
+    console.log(`KYC notification email sent successfully for user ${signleUser.email}`);
+  } catch (emailError) {
+    console.error("KYC email send error:", emailError);
+    // Don't fail the KYC submission, just log the error
+  }
 
 });
 
@@ -1335,18 +1386,24 @@ exports.createTicket = catchAsyncErrors(async (req, res, next) => {
       let subject = `${process.env.WebName} Customer Support - Re: ${ticketId} `;
       let text = `Hi there,
 
-We’ve opened a new request (#${ticketId}) for you.  
+We've opened a new request (#${ticketId}) for you.  
 
 You can check the details and provide any input by clicking the link below.  
 
-Here’s the link: ${process.env.BASE_URL}/tickets/${ticketId}  
+Here's the link: ${process.env.BASE_URL}/tickets/${ticketId}  
 
 Let us know if you need further assistance.  
 
 Best regards,  
 ${process.env.WebName} Team`;
-      // 
-      await sendEmail(signleUser.email, subject, text);
+      
+      try {
+        await sendEmail(signleUser.email, subject, text);
+        console.log(`Ticket email sent successfully to user ${signleUser.email} for ticket ${ticketId}`);
+      } catch (emailError) {
+        console.error(`Failed to send ticket email to user ${signleUser.email}:`, emailError);
+        // Don't fail the ticket creation, just log the error
+      }
 
     } else {
       let subject = `New Ticket from user `;
@@ -1356,13 +1413,19 @@ A user opened a new request (#${ticketId}) for you.
 
 You can check the details and provide any input by clicking the link below.  
 
-Here’s the link: ${process.env.BASE_URL}/admin/ticket/user/${userId}/${ticketId}  
+Here's the link: ${process.env.BASE_URL}/admin/ticket/user/${userId}/${ticketId}  
  
 
 Best regards,  
 ${process.env.WebName} Team`;
-      // 
-      await sendEmail(process.env.USER, subject, text);
+      
+      try {
+        await sendEmail(process.env.USER, subject, text);
+        console.log(`Ticket email sent successfully to admin for ticket ${ticketId}`);
+      } catch (emailError) {
+        console.error(`Failed to send ticket email to admin:`, emailError);
+        // Don't fail the ticket creation, just log the error
+      }
     }
   } catch (error) {  // Log the error for debugging
 
@@ -1385,19 +1448,16 @@ exports.getUserTickets = catchAsyncErrors(async (req, res, next) => {
   }
 });
 exports.getIndivTicket = catchAsyncErrors(async (req, res, next) => {
-  try {
-    const { id, ticketId } = req.params;
+  const { id, ticketId } = req.params;
 
+  const tickets = await Ticket.find({ user: id, ticketId });
 
-    const tickets = await Ticket.find({ user: id, ticketId });
-
-
-    // Respond with the created ticket
-    res.status(201).json({ success: true, ticket: tickets });
-  } catch (error) {
-    console.error('Error creating ticket:', error); // Log the error for debugging
-    res.status(500).json({ success: false, msg: 'Server error', error: error.message });
+  if (!tickets || tickets.length === 0) {
+    return next(new errorHandler("Ticket not found", 404));
   }
+
+  // Respond with the found ticket
+  res.status(200).json({ success: true, ticket: tickets });
 });
 
 
@@ -1451,7 +1511,10 @@ exports.updateMessage = catchAsyncErrors(async (req, res, next) => {
 
       if (!signleUser) {
         console.error(`User with ID ${userId} not found.`);
-        return  // Prevents further execution if user is not found
+        return res.status(500).json({
+          success: false,
+          msg: 'User not found.',
+        });
       }
 
       let checkNotification = await notificationSchema.create({
@@ -1464,44 +1527,79 @@ exports.updateMessage = catchAsyncErrors(async (req, res, next) => {
         userName: `${signleUser.firstName} ${signleUser.lastName}`,
       });
     }
+
+    // Send response immediately after ticket is saved
     res.status(200).json({
       success: true,
       msg: 'Ticket updated successfully.',
       ticket: ticket,
     });
+
+    // Handle email sending in background (non-blocking)
     if (sender === "admin") {
-      let signleUser = await UserModel.findById({ _id: userId });
+      try {
+        let signleUser = await UserModel.findById({ _id: userId });
 
-      if (!signleUser) {
-        console.error(`User with ID ${userId} not found.`);
-        return  // Prevents further execution if user is not found
-      }
+        if (!signleUser) {
+          console.error(`User with ID ${userId} not found for email.`);
+          return;
+        }
 
-      let subject = `${process.env.WebName} Customer Support - Re: ${ticketId} `;
-      let text = `Hi there,
+        let subject = `${process.env.WebName} Customer Support - Re: ${ticketId} `;
+        let text = `Hi there,
 
 We wanted to let you know that your request (#${ticketId}) has been updated.
 
 You can check out our response and add any additional comments by clicking on the link below.
 
-Here’s the link: ${process.env.BASE_URL}/tickets/${ticketId}`;
-      // 
-      await sendEmail(signleUser.email, subject, text);
-
-
-
+Here's the link: ${process.env.BASE_URL}/tickets/${ticketId}`;
+        
+        await sendEmail(signleUser.email, subject, text);
+        console.log(`Email sent successfully to user ${userId} for ticket ${ticketId}`);
+      } catch (emailError) {
+        console.error(`Failed to send email to user ${userId} for ticket ${ticketId}:`, emailError);
+        // Add email failure flag to the last admin message for admin visibility
+        try {
+          // Find the last admin message and add email failure flag
+          const lastAdminMessage = ticket.ticketContent[ticket.ticketContent.length - 1];
+          if (lastAdminMessage && lastAdminMessage.sender === 'admin') {
+            lastAdminMessage.emailFailed = true;
+            await ticket.save();
+            console.log(`Email failure flag added to admin message for ticket ${ticketId}`);
+          } else {
+            console.log(`No admin message found to add email failure flag for ticket ${ticketId}`);
+          }
+        } catch (saveError) {
+          console.error('Failed to save email failure flag:', saveError);
+        }
+      }
     } else {
-      let subject = `${process.env.WebName} Customer Support - Re: ${ticketId} `;
-      let text = `Hi there,
+      try {
+        let subject = `${process.env.WebName} Customer Support - Re: ${ticketId} `;
+        let text = `Hi there,
 
 We wanted to let you know that the user has updated the request (#${ticketId}).
 
 You can check out the response and add any additional comments by clicking on the link below.
 
-Here’s the link: ${process.env.BASE_URL}/admin/ticket/user/${userId}/${ticketId} `;
-      // 
-      await sendEmail(process.env.USER, subject, text);
-
+Here's the link: ${process.env.BASE_URL}/admin/ticket/user/${userId}/${ticketId} `;
+        
+        await sendEmail(process.env.USER, subject, text);
+        console.log(`Email sent successfully to admin for ticket ${ticketId}`);
+      } catch (emailError) {
+        console.error(`Failed to send email to admin for ticket ${ticketId}:`, emailError);
+        // Add email failure flag to the last user message for admin visibility
+        try {
+          // Find the last user message and add email failure flag
+          const lastUserMessage = ticket.ticketContent[ticket.ticketContent.length - 1];
+          if (lastUserMessage && lastUserMessage.sender === 'user') {
+            lastUserMessage.emailFailed = true;
+            await ticket.save();
+          }
+        } catch (saveError) {
+          console.error('Failed to save email failure flag:', saveError);
+        }
+      }
     }
 
   } catch (error) {

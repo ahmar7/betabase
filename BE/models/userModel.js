@@ -210,8 +210,67 @@ let userSchema = new mongoose.Schema({
     isAddUsersToSubAdmin: { type: Boolean, default: false },
     accessCrm: { type: Boolean, default: false },
     canManageCrmLeads: { type: Boolean, default: false },
+    canManageReferrals: { type: Boolean, default: false },
     // add more when needed
   },
+  
+  // ==================== MLM/REFERRAL SYSTEM FIELDS ====================
+  referralCode: {
+    type: String,
+    unique: true,
+    sparse: true, // Allows null/undefined values to not be checked for uniqueness
+    uppercase: true,
+    trim: true,
+    index: true
+  },
+  referredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'user',
+    default: null
+  },
+  affiliateStatus: {
+    type: String,
+    enum: ['inactive', 'active'],
+    default: 'inactive'
+  },
+  directReferrals: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'user'
+  }],
+  totalCommissionEarned: {
+    type: Number,
+    default: 0
+  },
+  commissionsPaid: [{
+    fromUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'user'
+    },
+    fromUserName: String,
+    fromUserEmail: String,
+    amount: {
+      type: Number,
+      required: true
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'paid'],
+      default: 'pending'
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'user'
+    },
+    approvedByName: String,
+    notes: String,
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    paidAt: Date
+  }],
+  // ==================== END MLM/REFERRAL SYSTEM FIELDS ====================
+  
   resetPasswordToken: String,
   resetPasswordExpire: Date,
   online: {
@@ -230,6 +289,31 @@ userSchema.methods.generateToken = function () {
   return jwt.sign({ _id: this._id }, process.env.SECRET_JWT, {
     expiresIn: process.env.SECRET_EXPIRE,
   });
+};
+
+// MLM: Generate unique referral code
+userSchema.methods.generateReferralCode = async function () {
+  const User = mongoose.model('user');
+  const crypto = require('crypto');
+  
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  while (attempts < maxAttempts) {
+    // Generate 8-character alphanumeric code
+    const code = crypto.randomBytes(4).toString('hex').toUpperCase();
+    
+    // Check if code already exists
+    const existingUser = await User.findOne({ referralCode: code });
+    
+    if (!existingUser) {
+      return code;
+    }
+    
+    attempts++;
+  }
+  
+  throw new Error('Failed to generate unique referral code after 10 attempts');
 };
 
 userSchema.methods.resetPasswordTokenGenerator = async function () {

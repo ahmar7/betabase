@@ -100,4 +100,46 @@ exports.checkCrmAccess = async (req, res, next) => {
     });
   }
 };
+
+exports.checkReferralManagementAccess = async (req, res, next) => {
+  try {
+    // Get user from request (added by isAuthorizedUser middleware)
+    const user = req.user;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated"
+      });
+    }
+
+    // Check referral management access based on user role
+    let hasReferralAccess = false;
+
+    if (user.role === "superadmin") {
+      // Superadmin always has referral management access
+      hasReferralAccess = true;
+    } else if (user.role === "admin") {
+      // Check admin permissions
+      hasReferralAccess = user.adminPermissions?.canManageReferrals === true;
+    }
+
+    if (!hasReferralAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied: No referral management permissions"
+      });
+    }
+
+    // User has referral management access, proceed to next middleware/controller
+    next();
+
+  } catch (error) {
+    console.error("Error in checkReferralManagementAccess middleware:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error in access check"
+    });
+  }
+};
  

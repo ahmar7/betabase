@@ -55,6 +55,7 @@ export function MainComponent() {
 	const [fractionBalancePending, setfractionBalancePending] = useState(null);
 	const [Description, setDescription] = useState(null);
 	const [Description2, setDescription2] = useState(null);
+	const [showReferralAd, setShowReferralAd] = useState(false);
 
 	const [singleTransaction, setsingleTransaction] = useState();
 	const [UserTransactions, setUserTransactions] = useState([]);
@@ -365,18 +366,129 @@ export function MainComponent() {
 			setAdmin(authUser().user);
 			getCoins(authUser().user);
 			patchCoins()
+			// Check if referral ad was dismissed
+			const adDismissed = localStorage.getItem('referralAdDismissed');
+			if (adDismissed === 'true') {
+				setShowReferralAd(false);
+			}else{
+				setShowReferralAd(true);
+			}
 			return;
 		} else if (authUser().user.role === "admin") {
 			setAdmin(authUser().user);
 			return;
 		}
 	}, []);
+
+	const dismissReferralAd = () => {
+		setShowReferralAd(false);
+		localStorage.setItem('referralAdDismissed', 'true');
+	};
 	return (
 		<Row>
 			<Col xl={12}>
 				<div className="row main-card">
 					<MainSlider />
 				</div>
+				{/* MLM Referral Promo Ad - Dismissible */}
+				{showReferralAd && (
+					<Row className="my-2">
+						<Col xl={12}>
+							<div className="card new-bg-dark" style={{
+								background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+								border: '2px solid rgba(255, 255, 255, 0.2)',
+								position: 'relative',
+								overflow: 'hidden'
+							}}>
+								<button 
+									onClick={dismissReferralAd}
+									style={{
+										position: 'absolute',
+										top: '10px',
+										right: '10px',
+										background: 'rgba(255, 255, 255, 0.2)',
+										border: 'none',
+										borderRadius: '50%',
+										width: '30px',
+										height: '30px',
+										cursor: 'pointer',
+										color: 'white',
+										fontSize: '18px',
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										transition: 'all 0.3s ease',
+										zIndex: 10
+									}}
+									onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.4)'}
+									onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
+								>
+									×
+								</button>
+								<div className="card-body" style={{ padding: '30px' }}>
+									<div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+										<div style={{
+											background: 'rgba(255, 255, 255, 0.15)',
+											borderRadius: '50%',
+											width: '80px',
+											height: '80px',
+											display: 'flex',
+											alignItems: 'center',
+											justifyContent: 'center',
+											fontSize: '40px',
+											flexShrink: 0
+										}}>
+											💰
+										</div>
+										<div style={{ flex: 1, minWidth: '250px' }}>
+											<h3 style={{ 
+												color: 'white', 
+												fontWeight: '700',
+												fontSize: '28px',
+												marginBottom: '15px',
+												textShadow: '0 2px 4px rgba(0,0,0,0.2)'
+											}}>
+												Turn Your Friends Into Cash! 🚀
+											</h3>
+											<p style={{ 
+												color: 'rgba(255, 255, 255, 0.95)', 
+												fontSize: '16px',
+												lineHeight: '1.6',
+												marginBottom: '20px'
+											}}>
+												Turn your friends into crypto buddies and your invites into cash! Share your unique code and get <strong>$100</strong> for every friend who signs up and starts trading. The more you refer, the more you earn — it's that simple. Let's make crypto social — invite, earn, repeat!
+											</p>
+											<Link 
+												to="/user/referral-promo" 
+												style={{
+													display: 'inline-block',
+													background: 'white',
+													color: '#667eea',
+													padding: '12px 30px',
+													borderRadius: '30px',
+													fontWeight: '700',
+													textDecoration: 'none',
+													boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+													transition: 'all 0.3s ease'
+												}}
+												onMouseEnter={(e) => {
+													e.target.style.transform = 'translateY(-2px)';
+													e.target.style.boxShadow = '0 6px 20px rgba(0,0,0,0.3)';
+												}}
+												onMouseLeave={(e) => {
+													e.target.style.transform = 'translateY(0)';
+													e.target.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
+												}}
+											>
+												Get Your Referral Code Now →
+											</Link>
+										</div>
+									</div>
+								</div>
+							</div>
+						</Col>
+					</Row>
+				)}
 				{
 					Description === "" || Description === null || Description === undefined ? "" :
 						<Row className="my2 mt-2">

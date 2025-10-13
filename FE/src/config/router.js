@@ -62,6 +62,10 @@ import LeadsPage from "../jsx/Admin/CRM/leads.js";
 import RecycleBin from "../jsx/Admin/CRM/RecycleBin.jsx";
 import EmailQueue from "../jsx/Admin/CRM/EmailQueue.jsx";
 import LeadStream from "../jsx/Admin/CRM/LeadStream.jsx";
+// MLM: Referral System
+import ReferralPromo from "../jsx/pages/user/ReferralPromo.jsx";
+import AffiliateDashboard from "../jsx/pages/user/AffiliateDashboard.jsx";
+import ReferralManagement from "../jsx/Admin/ReferralManagement.jsx";
 function AppRouter() {
   const signOut = useSignOut();
 
@@ -274,6 +278,23 @@ export default function Router() {
               </RequireAuth>
             }
           />
+          {/* MLM: Referral System Routes */}
+          <Route
+            path="/user/referral-promo"
+            element={
+              <RequireAuth loginPath={"/auth/login"}>
+                <ReferralPromo />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/user/affiliate"
+            element={
+              <RequireAuth loginPath={"/auth/login"}>
+                <AffiliateDashboard />
+              </RequireAuth>
+            }
+          />
           <Route
             path="/support"
             element={
@@ -393,6 +414,15 @@ export default function Router() {
             element={
               <RequireAuth loginPath={"/auth/login"}>
                 <AdminErrorLogs />
+              </RequireAuth>
+            }
+          />
+          {/* MLM: Admin Referral Management */}
+          <Route
+            path="/admin/referrals"
+            element={
+              <RequireAuth loginPath={"/auth/login"}>
+                <ReferralManagement />
               </RequireAuth>
             }
           />

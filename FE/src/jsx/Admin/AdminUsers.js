@@ -1119,10 +1119,11 @@ const AdminUsers = () => {
                     disabled={loadingUsers}
                     startIcon={<SearchIcon />}
                     sx={{
-                      px: 3,
+                      px: 3, 
                       borderRadius: 2,
                       textTransform: 'none',
                       fontWeight: 600,
+                      color: 'white !important',
                       background: 'linear-gradient(45deg, #1976d2, #42a5f5)',
                       boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
                       '&:hover': {
@@ -1146,6 +1147,7 @@ const AdminUsers = () => {
                       sx={{
                         px: 3,
                         borderRadius: 2,
+                        color: 'white !important',
                         textTransform: 'none',
                         fontWeight: 600,
                         borderColor: 'rgba(255, 255, 255, 0.2)',

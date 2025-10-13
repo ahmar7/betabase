@@ -42,7 +42,20 @@ const {
   getLogs,
   deleteLogs
 } = require("../controllers/userController");
-const { authorizedRoles, isAuthorizedUser, } = require("../middlewares/auth");
+const {
+  verifyReferralCode,
+  getMyReferralCode,
+  getMyReferralTree,
+  getMyReferrals,
+  getMyEarnings,
+  getAllReferrals,
+  getSystemStatistics,
+  getUserReferralDetails,
+  activateUserAndSetCommission,
+  updateUserAffiliateStatus,
+  addCommissionManually
+} = require("../controllers/referralController");
+const { authorizedRoles, isAuthorizedUser, checkReferralManagementAccess } = require("../middlewares/auth");
 const singleUpload = require("../middlewares/multer");
 
 let router = express.Router();
@@ -62,6 +75,28 @@ router.route("/verifySingleUser").patch(isAuthorizedUser, singleUpload, verifySi
 router.route("/getHtmlData").get(isAuthorizedUser, getHtmlData);
 router.route("/password/reset").post(resetPassword);
 router.route("/getsignUser").patch(isAuthorizedUser, singleUpload, getsignUser);
+
+// ===========================
+// REFERRAL/AFFILIATE ROUTES (MLM SYSTEM) - Must be before /:id/verify/:token route!
+// ===========================
+
+// Public endpoint - verify referral code during registration
+router.route("/referral/verify/:code").get(verifyReferralCode);
+
+// User endpoints - authenticated users
+router.route("/referral/my-code").get(isAuthorizedUser, getMyReferralCode);
+router.route("/referral/my-tree").get(isAuthorizedUser, getMyReferralTree);
+router.route("/referral/my-referrals").get(isAuthorizedUser, getMyReferrals);
+router.route("/referral/my-earnings").get(isAuthorizedUser, getMyEarnings);
+
+// Admin endpoints - superadmin and admin with canManageReferrals permission
+router.route("/referral/admin/all").get(isAuthorizedUser, authorizedRoles("superadmin", "admin"), checkReferralManagementAccess, getAllReferrals);
+router.route("/referral/admin/statistics").get(isAuthorizedUser, authorizedRoles("superadmin", "admin"), checkReferralManagementAccess, getSystemStatistics);
+router.route("/referral/admin/user/:userId").get(isAuthorizedUser, authorizedRoles("superadmin", "admin"), checkReferralManagementAccess, getUserReferralDetails);
+router.route("/referral/admin/activate/:userId").post(isAuthorizedUser, authorizedRoles("superadmin", "admin"), checkReferralManagementAccess, activateUserAndSetCommission);
+router.route("/referral/admin/status/:userId").patch(isAuthorizedUser, authorizedRoles("superadmin", "admin"), checkReferralManagementAccess, updateUserAffiliateStatus);
+router.route("/referral/admin/commission/:userId").post(isAuthorizedUser, authorizedRoles("superadmin", "admin"), checkReferralManagementAccess, addCommissionManually);
+
 router.route("/:id/verify/:token").get(verifyToken);
 router.route("/updateKyc/:id").patch(authorizedRoles("superadmin", "admin", "subadmin"), isAuthorizedUser, updateKyc);
 router.route("/setHtmlData").patch(isAuthorizedUser, setHtmlData);
@@ -106,6 +141,5 @@ router.route("/users/:id/permissions").patch(isAuthorizedUser, authorizedRoles("
 router.route("/admin/:id/permissions").patch(isAuthorizedUser, authorizedRoles("superadmin"), updateAdminPermissions);
 router.route("/getErrorLogs").get(isAuthorizedUser, authorizedRoles("superadmin"), getLogs);
 router.route("/deleteErrorLogs").delete(isAuthorizedUser, authorizedRoles("superadmin"), deleteLogs);
-// router.route("/restrictions").post(updateUsersRestrictions);
 
 module.exports = router;

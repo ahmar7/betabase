@@ -179,9 +179,10 @@ module.exports = async (email, subject, text) => {
           secure: isSecure,
           requireTLS: !isSecure,
           tls: {
-            ciphers: 'SSLv3',
             rejectUnauthorized: false,
-            minVersion: 'TLSv1.2'
+            minVersion: 'TLSv1.2',
+            maxVersion: 'TLSv1.3',
+            ciphers: 'ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:!aNULL:!MD5:!DSS'
           },
           auth: {
             user: process.env.USER,

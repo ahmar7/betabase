@@ -178,6 +178,7 @@ const AdminPermissions = () => {
                     { key: 'isTokenManagement', label: 'User Tokens Access', desc: " Allow administrator to see or edit user tokens of all users 'My Token' page." },
                     { key: 'accessCrm', label: 'CRM Access', desc: " Allow administrator to access CRM" },
                     { key: 'canManageCrmLeads', label: 'CRM: Upload CSV & Assign Leads to Subadmins', desc: "Allow administrator to upload leads CSV and assign leads to Subadmins. Also view their own and subadmins' leads." },
+                    { key: 'canManageReferrals', label: 'Referral Management', desc: "Allow administrator to access and manage the referral program, view referral statistics, activate users, and set commissions." },
                   ].map((permission) => (<div key={permission.key} className="permission-card bg-muted-800 p-6 rounded-xl shadow-lg border border-muted-700 hover:border-primary-500 transition-all duration-300 hover:shadow-xl">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold text-white">
@@ -228,3 +229,4 @@ const AdminPermissions = () => {
 };
 
 export default AdminPermissions;
+

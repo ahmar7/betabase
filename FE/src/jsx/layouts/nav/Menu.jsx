@@ -299,6 +299,21 @@ const useMenuList = () => {
             iconStyle: <i className="material-symbols-outlined">lab_profile</i>,
 
         },
+        // MLM: Referral System
+        {
+            title: 'Refer & Earn',
+            classsChange: 'mm-active',
+            to: '/user/referral-promo',
+            iconStyle: <i className="material-symbols-outlined">share</i>,
+
+        },
+        {
+            title: 'My Affiliate',
+            classsChange: 'mm-active',
+            to: '/user/affiliate',
+            iconStyle: <i className="material-symbols-outlined">group</i>,
+
+        },
         {
             title: 'Logout',
             classsChange: 'mm-active',
@@ -311,3 +326,6 @@ const useMenuList = () => {
 };
 
 export default useMenuList;
+
+
+       

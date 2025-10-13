@@ -95,6 +95,7 @@ const SideBar = (props) => {
   // ////////////////////////
   const [allowManageSubAdmins, setAllowManageSubAdmins] = useState(false);
   const [allowEditProfile, setAllowEditProfile] = useState(false);
+  const [canManageReferrals, setCanManageReferrals] = useState(false); // MLM Permission
   const getSignleUser = async () => {
     try {
       const signleUser = await signleUsersApi(authUser().user._id);
@@ -102,6 +103,7 @@ const SideBar = (props) => {
       if (signleUser.success) {
         setAllowManageSubAdmins(signleUser?.signleUser?.adminPermissions?.isSubManagement)
         setAllowEditProfile(signleUser?.signleUser?.adminPermissions?.isProfileUpdate)
+        setCanManageReferrals(signleUser?.signleUser?.adminPermissions?.canManageReferrals) // MLM
 
       } else {
         toast.dismiss();
@@ -114,8 +116,24 @@ const SideBar = (props) => {
     }
   };
   useEffect(() => {
+    getSignleUser();
 
-    getSignleUser()
+    // Refresh permissions when window regains focus (e.g., after navigating back from another tab)
+    const handleFocus = () => {
+      getSignleUser();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    // Refresh permissions every 30 seconds to catch updates
+    const intervalId = setInterval(() => {
+      getSignleUser();
+    }, 30000); // 30 seconds
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(intervalId);
+    };
   }, []);
   return (
     <>
@@ -525,6 +543,29 @@ const SideBar = (props) => {
                   </span>
                 </NavLink>
               </li> : ""}
+
+            {/* MLM: Referral Management - Only for superadmin or admin with canManageReferrals permission */}
+            {(authUser().user.role === "superadmin" || canManageReferrals) && (
+              <li>
+                <NavLink
+                  to="/admin/referrals"
+                  className=" router-link-active nui-focus text-muted-500 dark:text-muted-400/80 hover:bg-muted-100 dark:hover:bg-muted-700/60 hover:text-muted-600 dark:hover:text-muted-200 flex cursor-pointer items-center gap-4 rounded-lg py-3 transition-colors duration-300 px-4"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    className="icon w-5 h-5"
+                  >
+                    <path d="M4.5 6.375a4.125 4.125 0 118.25 0 4.125 4.125 0 01-8.25 0zM14.25 8.625a3.375 3.375 0 116.75 0 3.375 3.375 0 01-6.75 0zM1.5 19.125a7.125 7.125 0 0114.25 0v.003l-.001.119a.75.75 0 01-.363.63 13.067 13.067 0 01-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 01-.364-.63l-.001-.122zM17.25 19.128l-.001.144a2.25 2.25 0 01-.233.96 10.088 10.088 0 005.06-1.01.75.75 0 00.42-.643 4.875 4.875 0 00-6.957-4.611 8.586 8.586 0 011.71 5.157v.003z" />
+                  </svg>
+
+                  <span className="whitespace-nowrap font-sans text-sm block">
+                    Referral Management
+                  </span>
+                </NavLink>
+              </li>
+            )}
 
             <li>
               <NavLink

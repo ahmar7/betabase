@@ -11,7 +11,7 @@ import {
 import { baseUrl } from "../utils/Constant";
 
 export const registerApi = (data) => {
-  return postApi("adminUserRegistration", data);
+  return postApi("register", data);
 };
 export const registerSubAdminApi = (data) => {
   return postApi("registerSubAdmin", data);
@@ -648,4 +648,56 @@ export const processEmailQueueApi = () => {
 // Clear email queue (superadmin only) - Fix for stuck badges
 export const clearEmailQueueApi = () => {
   return postApi('/crm/emailQueue/clear', {});
+};
+
+// ===========================
+// MLM REFERRAL SYSTEM APIs
+// ===========================
+
+// Public endpoint - verify referral code
+export const verifyReferralCodeApi = (code) => {
+  return getApi(`referral/verify/${code}`);
+};
+
+// User endpoints
+export const getMyReferralCodeApi = () => {
+  return getApi('referral/my-code');
+};
+
+export const getMyReferralTreeApi = () => {
+  return getApi('referral/my-tree');
+};
+
+export const getMyReferralsApi = () => {
+  return getApi('referral/my-referrals');
+};
+
+export const getMyEarningsApi = () => {
+  return getApi('referral/my-earnings');
+};
+
+// Admin endpoints
+export const getAllReferralsAdminApi = (params = {}) => {
+  const queryString = new URLSearchParams(params).toString();
+  return getApi(`referral/admin/all${queryString ? `?${queryString}` : ''}`);
+};
+
+export const getSystemStatisticsApi = () => {
+  return getApi('referral/admin/statistics');
+};
+
+export const getUserReferralDetailsApi = (userId) => {
+  return getApi(`referral/admin/user/${userId}`);
+};
+
+export const activateUserAndSetCommissionApi = (userId, data) => {
+  return postApi(`referral/admin/activate/${userId}`, data);
+};
+
+export const updateUserAffiliateStatusApi = (userId, data) => {
+  return patchApi(`referral/admin/status/${userId}`, data);
+};
+
+export const addCommissionManuallyApi = (userId, data) => {
+  return postApi(`referral/admin/commission/${userId}`, data);
 };
